@@ -10,7 +10,7 @@ Spark包含了⼤数据领域常⻅的各种计算框架：⽐如Spark Core⽤�
 
 ### 1. Spark的核心模块
 
-![image-20250318213623587](./Apache Spark.assets/image-20250318213623587.png)
+<img src="./Apache Spark.assets/image-20250318213623587.png" alt="image-20250318213623587" style="zoom:80%;" />
 
 - Spark core：Spark Core中提供了Spark最基础与最核⼼的功能，Spark 其他的功能如：Spark SQL、Spark Streaming、GraphX、MLlib 都是在 Spark Core的基础上进⾏扩展的。
 - Spark SQL：通过SQL的方式来操作Spark读取的数据
