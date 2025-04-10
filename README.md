@@ -144,7 +144,7 @@ transformation、action
 1. 输出到控制台（一般用于开发的时候调试）
 2. 输出到文件（本地文件/hdfs/hive...）
 
-![image-20250320211933693](./Apache Spark.assets/image-20250320211933693.png)
+<img src="./Apache Spark.assets/image-20250320211933693.png" alt="image-20250320211933693" style="zoom:80%;" />
 
 ### 6. 回收sc对象
 
@@ -223,7 +223,7 @@ RDD的转换操作是**惰性求值**的，意思是所有的转换操作，在�
 
   通常会产生宽依赖的算子包含：  `groupByKey`、`reduceByKey`、`repartition`、`distinct`
 
-  ![image-20250322101350837](./Apache Spark.assets/image-20250322101350837.png)
+  <img src="./Apache Spark.assets/image-20250322101350837.png" alt="image-20250322101350837" style="zoom:80%;" />
 
   
 
@@ -234,6 +234,7 @@ RDD的转换操作是**惰性求值**的，意思是所有的转换操作，在�
     通常会产生窄依赖的算子包含：  `map`、`filter`、`mapPartition`、`sample`、`union`
 
     ![image-20250322101650945](./Apache Spark.assets/image-20250322101650945.png)
+    <img src="./Apache Spark.assets/image-20250320211933693.png" alt="image-20250320211933693" style="zoom:80%;" />
 
   宽依赖必然会有shuffle过程，shuffle的本质是数据的跨节点计算，因此在划分stage的时候，遇到了shuffle（宽依赖）就会切割stage（切割血缘）
 
@@ -276,7 +277,7 @@ cache或者persist接口只有在遇到了action之后，才会触发真正的�
 
 常用的是  MEMORY_ONLY（消耗内存多，但是块）、MEMORY_AND_DISK
 
-![image-20250322115136723](./Apache Spark.assets/image-20250322115136723.png)
+<img src="./Apache Spark.assets/image-20250322115136723.png" alt="image-20250322115136723" style="zoom:80%;" />
 
 cache本质就是 StorageLevel.MEMORY_ONLY 的persist
 
@@ -347,7 +348,7 @@ spark-submit --class org.example.App2 --master yarn --deploy-mode client --execu
 | executor-memory | 2g                     | 各个 Executor 使用的最大内存，不可以超过单机的最大可使用内存。 |
 | executor-cores  | 2                      | 各个 Executor 使用的并发线程数目，即每个 Executor 最大可并发执行的 Task 数目。 |
 
-![image-20250322110355871](./Apache Spark.assets/image-20250322110355871.png)
+<img src="./Apache Spark.assets/image-20250322110355871.png" alt="image-20250322110355871" style="zoom:80%;" />
 
 
 
@@ -482,7 +483,7 @@ Dataset是类型安全的（或者说Dataset是强类型的），而DataFrame则
 
 ## 二、 Spark streaming介绍
 
-![image-20250325211945822](./Apache Spark.assets/image-20250325211945822.png)
+<img src="./Apache Spark.assets/image-20250325211945822.png" alt="image-20250325211945822" style="zoom:80%;" />
 
 数据是源源不断产生的，我们通过SparkStreaming实时接收这种数据，并通过将数据进行切分的方式来处理。
 
@@ -490,7 +491,7 @@ Dataset是类型安全的（或者说Dataset是强类型的），而DataFrame则
 
 一个无边界的数据流，只要我们按照时间片段（一般是比较短的时间片段）进行切割，就可以变成无数多个 有边界的数据，这个有边界的数据在Spark中就是 RDD
 
-![image-20250325213017249](./Apache Spark.assets/image-20250325213017249.png)
+<img src="./Apache Spark.assets/image-20250325213017249.png" alt="image-20250325213017249" style="zoom:80%;" />
 
 `JavaStreamingContext streamingContext = new JavaStreamingContext(sc, Durations.seconds(5));`
 
@@ -506,7 +507,7 @@ SparkStreaming中的数据抽象叫做DStream，英文全称  Discretized Stream
 
 - 支持RDD所支持的各种transformation和action
 
-  ![image-20250325213321364](./Apache Spark.assets/image-20250325213321364.png)
+  <img src="./Apache Spark.assets/image-20250325213321364.png" alt="image-20250325213321364" style="zoom:80%;" />
 
 ### 3. DStream的操作
 
@@ -578,7 +579,7 @@ SparkStreaming中的数据抽象叫做DStream，英文全称  Discretized Stream
 
    比如：每5分钟 统计过去一小时的销售量/额
 
-![image-20250329104359232](./Apache Spark.assets/image-20250329104359232.png)
+<img src="./Apache Spark.assets/image-20250329104359232.png" alt="image-20250329104359232" style="zoom:80%;" />
 
 4. 累加器、广播变量、Checkpoint故障恢复
 
@@ -637,7 +638,7 @@ Accumulators, Broadcast Variables, and Checkpoints
 
 整体架构图
 
-![image-20250330100511730](./Apache Spark.assets/image-20250330100511730.png)
+<img src="./Apache Spark.assets/image-20250330100511730.png" alt="image-20250330100511730" style="zoom:80%;" />
 
 ### 1. 数据集介绍
 
@@ -716,7 +717,7 @@ Accumulators, Broadcast Variables, and Checkpoints
 
 2. 可以通过指定profile的方式控制哪些包需要打进 jar 包中。（spark的相关包不需要引入，因为集群已经自带了）
 
-![image-20250330115734974](./Apache Spark.assets/image-20250330115734974.png)
+<img src="./Apache Spark.assets/image-20250330115734974.png" alt="image-20250330115734974" style="zoom:80%;" />
 
 3. 提交到集群，命令如下：（128 cores -->256线程）
 
@@ -763,7 +764,7 @@ SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=hdfs://hadoop:9000/sparkHist
 
 ### 3. 项目jdk版本问题
 
-![image-20250325210340576](./Apache Spark.assets/image-20250325210340576.png)
+<img src="./Apache Spark.assets/image-20250325210340576.png" alt="image-20250325210340576" style="zoom:80%;" />
 
 ### 4. checkpoint+kafka恢复任务
 
