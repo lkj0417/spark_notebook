@@ -233,8 +233,7 @@ RDD的转换操作是**惰性求值**的，意思是所有的转换操作，在�
 
     通常会产生窄依赖的算子包含：  `map`、`filter`、`mapPartition`、`sample`、`union`
 
-    ![image-20250322101650945](./Apache Spark.assets/image-20250322101650945.png)
-    <img src="./Apache Spark.assets/image-20250320211933693.png" alt="image-20250320211933693" style="zoom:80%;" />
+    <img src="./Apache Spark.assets/image-20250322101650945.png" alt="image-20250322101650945" style="zoom:80%;" />
 
   宽依赖必然会有shuffle过程，shuffle的本质是数据的跨节点计算，因此在划分stage的时候，遇到了shuffle（宽依赖）就会切割stage（切割血缘）
 
