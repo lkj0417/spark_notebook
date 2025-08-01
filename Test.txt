@@ -2,109 +2,179 @@ import unittest
 from unittest.mock import MagicMock, patch, call
 import traceback
 
-class TestReadData(unittest.TestCase):
+# 假设的导入路径，根据实际项目结构调整
+from src.main.python.com.hsbc.cdms.dataSource.impl.Db2DataSource import Db2DataSource
+from src.main.python.com.hsbc.cdms.common.DataTypeConvert import DataTypeConvert
 
-    @patch('your_module.DataTypeConvert')  # 替换为实际模块路径
-    @patch('your_module.globals')
-    def test_read_data_success(self, mock_globals, mock_data_type_convert):
-        # 模拟依赖项
-        mock_logger = MagicMock()
-        mock_spark = MagicMock()
-        mock_spark.read.jdbc.return_value.dtypes = [("col1", "int"), ("col2", "string")]
+class TestDb2DataSource(unittest.TestCase):
+
+    def setUp(self):
+        self.mock_logger = MagicMock()
+        self.mock_spark = MagicMock()
+        self.mock_spark.read.jdbc.return_value.dtypes = [("col1", "int"), ("col2", "string")]
         
-        # 模拟配置
-        config = {
-            "dbConfig": "DB2Config",
+        self.config = {
+            "dbConfig": {
+                "class": "Db2DataSourceConnection",
+                "host": "db2host",
+                "port": "50000",
+                "database": "sample",
+                "user": "user",
+                "password": "pass"
+            },
             "query": "SELECT * FROM table"
         }
         
+        self.collection_name = "test_collection"
+        self.schema = None
+
+    @patch('src.main.python.com.hsbc.cdms.dataSource.impl.Db2DataSource.globals')
+    @patch('src.main.python.com.hsbc.cdms.common.DataTypeConvert.DataTypeConvert')
+    def test_read_data_success(self, mock_data_type_convert, mock_globals):
         # 模拟连接类
         mock_conn_class = MagicMock()
         mock_conn_instance = mock_conn_class.return_value
         mock_conn_instance.jdbc_connection.return_value = (
             {"user": "test", "password": "pass"},
-            "jdbc:db2://host:port/db"
+            "jdbc:db2://db2host:50000/sample"
         )
+        
+        # 模拟globals返回包含连接类的字典
         mock_globals.return_value = {
-            "DB2Config": {"class": mock_conn_class}
+            "Db2DataSourceConnection": mock_conn_class
         }
         
         # 模拟类型转换
         mock_convert_instance = mock_data_type_convert.return_value
         mock_convert_instance.get_target_column_type.side_effect = ["INTEGER", "VARCHAR"]
         
+        # 创建被测对象
+        db2_data_source = Db2DataSource()
+        
         # 调用被测方法
-        from your_module import YourClass  # 替换为实际模块路径
-        result = YourClass().read_data(
-            logger=mock_logger,
-            spark=mock_spark,
-            config=config,
-            collectionName="test_collection",
-            schema=None
+        result_df = db2_data_source.read_data(
+            logger=self.mock_logger,
+            spark=self.mock_spark,
+            config=self.config,
+            collectionName=self.collection_name,
+            schema=self.schema
         )
         
         # 验证日志调用
-        mock_logger.info.assert_has_calls([
+        self.mock_logger.info.assert_has_calls([
             call("Starting data extraction from DB2..."),
             call("Executing query: SELECT * FROM table")
         ])
         
         # 验证连接调用
         mock_conn_class.assert_called_once()
-        mock_conn_instance.jdbc_connection.assert_called_once_with("DB2Config")
+        mock_conn_instance.jdbc_connection.assert_called_once_with(self.config["dbConfig"])
         
-        # 验证Spark调用
-        mock_spark.read.jdbc.assert_called_once_with(
-            url="jdbc:db2://host:port/db",
+        # 验证Spark JDBC调用
+        self.mock_spark.read.jdbc.assert_called_once_with(
+            url="jdbc:db2://db2host:50000/sample",
             table="(SELECT * FROM table) AS subquery",
             properties={"user": "test", "password": "pass"}
         )
         
         # 验证类型转换
-        result.select.assert_called_once()
-        select_args = result.select.call_args[0][0]
+        result_df.select.assert_called_once()
+        select_args = result_df.select.call_args[0][0]
         self.assertEqual(len(select_args), 2)
         self.assertEqual(str(select_args[0]), "col(col1).cast(INTEGER)")
         self.assertEqual(str(select_args[1]), "col(col2).cast(VARCHAR)")
 
-    @patch('your_module.DataTypeConvert')
-    @patch('your_module.globals')
-    def test_read_data_failure(self, mock_globals, mock_data_type_convert):
-        # 模拟依赖项
-        mock_logger = MagicMock()
-        mock_spark = MagicMock()
-        mock_spark.read.jdbc.side_effect = Exception("DB connection failed")
+    @patch('src.main.python.com.hsbc.cdms.dataSource.impl.Db2DataSource.globals')
+    @patch('src.main.python.com.hsbc.cdms.common.DataTypeConvert.DataTypeConvert')
+    def test_read_data_connection_failure(self, mock_data_type_convert, mock_globals):
+        # 模拟连接类抛出异常
+        mock_conn_class = MagicMock()
+        mock_conn_instance = mock_conn_class.return_value
+        mock_conn_instance.jdbc_connection.side_effect = Exception("Connection failed")
         
-        # 模拟配置
-        config = {
-            "dbConfig": "DB2Config",
-            "query": "SELECT * FROM table"
+        # 模拟globals
+        mock_globals.return_value = {
+            "Db2DataSourceConnection": mock_conn_class
         }
         
+        # 创建被测对象
+        db2_data_source = Db2DataSource()
+        
+        # 调用被测方法并验证异常
+        with self.assertRaises(Exception):
+            db2_data_source.read_data(
+                logger=self.mock_logger,
+                spark=self.mock_spark,
+                config=self.config,
+                collectionName=self.collection_name,
+                schema=self.schema
+            )
+        
+        # 验证错误日志
+        self.mock_logger.error.assert_has_calls([
+            call("Error details: Connection failed"),
+            call(traceback.format_exc())
+        ])
+
+    @patch('src.main.python.com.hsbc.cdms.dataSource.impl.Db2DataSource.globals')
+    @patch('src.main.python.com.hsbc.cdms.common.DataTypeConvert.DataTypeConvert')
+    def test_read_data_jdbc_failure(self, mock_data_type_convert, mock_globals):
         # 模拟连接类
         mock_conn_class = MagicMock()
         mock_conn_instance = mock_conn_class.return_value
         mock_conn_instance.jdbc_connection.return_value = (
             {"user": "test", "password": "pass"},
-            "jdbc:db2://host:port/db"
+            "jdbc:db2://db2host:50000/sample"
         )
+        
+        # 模拟globals
         mock_globals.return_value = {
-            "DB2Config": {"class": mock_conn_class}
+            "Db2DataSourceConnection": mock_conn_class
         }
         
+        # 模拟JDBC读取失败
+        self.mock_spark.read.jdbc.side_effect = Exception("JDBC read failed")
+        
+        # 创建被测对象
+        db2_data_source = Db2DataSource()
+        
         # 调用被测方法并验证异常
-        from your_module import YourClass  # 替换为实际模块路径
         with self.assertRaises(Exception):
-            YourClass().read_data(
-                logger=mock_logger,
-                spark=mock_spark,
-                config=config,
-                collectionName="test_collection",
-                schema=None
+            db2_data_source.read_data(
+                logger=self.mock_logger,
+                spark=self.mock_spark,
+                config=self.config,
+                collectionName=self.collection_name,
+                schema=self.schema
             )
         
         # 验证错误日志
-        mock_logger.error.assert_has_calls([
-            call("Error details: (e)"),
+        self.mock_logger.error.assert_has_calls([
+            call("Error details: JDBC read failed"),
             call(traceback.format_exc())
         ])
+
+    @patch('src.main.python.com.hsbc.cdms.dataSource.impl.Db2DataSource.globals')
+    def test_read_data_missing_class(self, mock_globals):
+        # 模拟globals不包含所需类
+        mock_globals.return_value = {}
+        
+        # 创建被测对象
+        db2_data_source = Db2DataSource()
+        
+        # 调用被测方法并验证异常
+        with self.assertRaises(KeyError):
+            db2_data_source.read_data(
+                logger=self.mock_logger,
+                spark=self.mock_spark,
+                config=self.config,
+                collectionName=self.collection_name,
+                schema=self.schema
+            )
+        
+        # 验证错误日志
+        self.mock_logger.error.assert_called()
+        self.assertIn("Error details:", self.mock_logger.error.call_args_list[0][0][0])
+
+if __name__ == '__main__':
+    unittest.main()
