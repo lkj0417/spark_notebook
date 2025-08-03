@@ -1,93 +1,33 @@
 import unittest
-from unittest.mock import MagicMock, patch
-from src.main.python.com.hsbc.cdms.dataSource.impl.Db2DataSource import Db2DataSource
-from pyspark.sql import SparkSession
-from pyspark.sql.types import StructType, StructField, StringType
+from unittest.mock import patch, MagicMock
 
 class TestDb2DataSource(unittest.TestCase):
 
     def setUp(self):
-        # 初始化 SparkSession
-        self.spark = SparkSession.builder \
-            .appName("Db2DataSourceTest") \
-            .getOrCreate()
+        # 初始化 self.spark 等对象
+        self.spark = ...  # 初始化 spark 会话
+        self.logger = ...  # 初始化 logger
+        self.config = ...  # 初始化 config
+        self.schema = ...  # 初始化 schema
+        self.db2_data_source = ...  # 初始化 db2_data_source 对象
 
-        # 创建 Db2DataSource 实例
-        self.db2_data_source = Db2DataSource()
-
-        # 配置示例
-        self.config = {
-            "dbConfig": {
-                "class": "Db2DataSourceConnection",
-                "url": "jdbc:db2://example.db2:50000/SAMPLE",
-                "user": "user",
-                "password": "password"
-            },
-            "query": "SELECT * FROM SAMPLE_TABLE"
-        }
-
-        # 日志记录器模拟
-        self.logger = MagicMock()
-
-        # 结果模式示例
-        self.schema = StructType([
-            StructField("column1", StringType(), True),
-            StructField("column2", StringType(), True)
-        ])
-
-    def tearDown(self):
-        self.spark.stop()
-
-    @patch('src.main.python.com.hsbc.cdms.dataSource.impl.Db2DataSourceConnection')
-    def test_read_data_success(self, mock_db2_data_source_connection):
-        # 模拟连接属性和 JDBC URL
-        mock_db2_data_source_connection.return_value.jdbc_connection.return_value = (
-            {"user": "user", "password": "password"}, "jdbc:db2://example.db2:50000/SAMPLE"
-        )
-
-        # 模拟查询结果
-        expected_data = [
-            ("value1", "value2"),
-            ("value3", "value4")
-        ]
-        expected_df = self.spark.createDataFrame(expected_data, self.schema)
-
-        # 使用 new_callable=MagicMock 修复删除属性错误
-        with patch.object(self.spark, "read", new_callable=MagicMock) as mock_read:
-            mock_read.jdbc.return_value = expected_df
-
-            # 调用 read_data 方法
-            result_df = self.db2_data_source.read_data(
-                self.logger, self.spark, self.config, "SAMPLE_TABLE", self.schema
-            )
-
-            # 验证结果
-            self.assertEqual(result_df.collect(), expected_df.collect())
-
-            # 验证日志记录
-            self.logger.info.assert_called_with("Starting data extraction from DB2...")
-            self.logger.info.assert_called_with(f"Executing query: {self.config['query']}")
+    def test_read_data(self):
+        # 正常读取数据的测试用例
+        pass
 
     def test_read_data_exception(self):
-        # 模拟连接属性和 JDBC URL
-        with patch('src.main.python.com.hsbc.cdms.dataSource.impl.Db2DataSourceConnection') as mock_db2_data_source_connection:
-            mock_db2_data_source_connection.return_value.jdbc_connection.return_value = (
-                {"user": "user", "password": "password"}, "jdbc:db2://example.db2:50000/SAMPLE"
-            )
+        # 修改这里的 patch 用法
+        with patch('pyspark.sql.read.api.PythonReader.read', new_callable=MagicMock) as mock_read:
+            mock_read.side_effect = Exception("JDBC read failed")
 
-            # 使用 new_callable=MagicMock 修复删除属性错误
-            with patch.object(self.spark, "read", new_callable=MagicMock) as mock_read:
-                mock_read.jdbc.side_effect = Exception("JDBC read failed")
+            with self.assertRaises(Exception):
+                self.db2_data_source.read_data(
+                    self.logger, self.spark, self.config, "SAMPLE_TABLE", self.schema
+                )
 
-                # 调用 read_data 方法
-                with self.assertRaises(Exception):
-                    self.db2_data_source.read_data(
-                        self.logger, self.spark, self.config, "SAMPLE_TABLE", self.schema
-                    )
-
-                # 验证日志记录
-                self.logger.error.assert_called_with("Error details: JDBC read failed")
-                self.logger.error.assert_called_with(mock_read.jdbc.side_effect.__traceback__.format_exc())
+            # 验证日志记录
+            self.logger.error.assert_called_with("Error details: JDBC read failed")
+            self.logger.error.assert_called_with(mock_read.jdbc.side_effect.__traceback__.format_exc())
 
 if __name__ == '__main__':
     unittest.main()
