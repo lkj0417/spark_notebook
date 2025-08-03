@@ -52,8 +52,8 @@ class TestDb2DataSource(unittest.TestCase):
         ]
         expected_df = self.spark.createDataFrame(expected_data, self.schema)
 
-        # 模拟 spark.read.jdbc 方法
-        with patch.object(self.spark, "read") as mock_read:
+        # 使用 new_callable=MagicMock 修复删除属性错误
+        with patch.object(self.spark, "read", new_callable=MagicMock) as mock_read:
             mock_read.jdbc.return_value = expected_df
 
             # 调用 read_data 方法
@@ -75,8 +75,8 @@ class TestDb2DataSource(unittest.TestCase):
                 {"user": "user", "password": "password"}, "jdbc:db2://example.db2:50000/SAMPLE"
             )
 
-            # 模拟 spark.read.jdbc 方法抛出异常
-            with patch.object(self.spark, "read") as mock_read:
+            # 使用 new_callable=MagicMock 修复删除属性错误
+            with patch.object(self.spark, "read", new_callable=MagicMock) as mock_read:
                 mock_read.jdbc.side_effect = Exception("JDBC read failed")
 
                 # 调用 read_data 方法
