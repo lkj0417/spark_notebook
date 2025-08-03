@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from src.main.python.com.hsbc.cdms.dataSource.impl.Db2DataSource import Db2DataSource
-from pyspark.sql import SparkSession, DataFrame
+from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, StringType
 
 class TestDb2DataSource(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestDb2DataSource(unittest.TestCase):
                 "class": "Db2DataSourceConnection",
                 "url": "jdbc:db2://example.db2:50000/SAMPLE",
                 "user": "user",
-                "password": "password"
+                "password": "encrypted_password"
             },
             "query": "SELECT * FROM SAMPLE_TABLE"
         }
@@ -67,23 +67,24 @@ class TestDb2DataSource(unittest.TestCase):
             self.logger.info.assert_called_with(f"Executing query: {self.config['query']}")
 
     @patch('src.main.python.com.hsbc.cdms.dataSource.impl.Db2DataSourceConnection')
-    def test_read_data_exception(self, mock_db2_data_source_connection):
+    @patch('src.main.python.com.hsbc.cdms.util.PasswordEncryptAndDecrypt.password_decrypt')
+    def test_read_data_exception(self, mock_decrypt, mock_db2_data_source_connection):
         # 模拟连接属性和 JDBC URL
         mock_db2_data_source_connection.return_value.jdbc_connection.return_value = (
-            {"user": "user", "password": "password"}, "jdbc:db2://example.db2:50000/SAMPLE"
+            {"user": "user", "password": "encrypted_password"}, "jdbc:db2://example.db2:50000/SAMPLE"
         )
 
-        # 使用 patch 模拟 DataFrameReader 的 jdbc 方法抛出异常
-        with patch('pyspark.sql.DataFrameReader.jdbc', side_effect=Exception("JDBC read failed")) as mock_jdbc:
-            # 调用 read_data 方法
-            with self.assertRaises(Exception):
-                self.db2_data_source.read_data(
-                    self.logger, self.spark, self.config, "SAMPLE_TABLE", self.schema
-                )
+        # 模拟 password_decrypt 返回非法字节，触发 UnicodeDecodeError
+        mock_decrypt.return_value = b"\xa5"  # 模拟 ASCII 解码失败
 
-            # 验证日志记录
-            self.logger.error.assert_called_with("Error details: JDBC read failed")
-            self.logger.error.assert_called_with(mock_jdbc.side_effect.__traceback__.format_exc())
+        # 调用 read_data 方法
+        with self.assertRaises(UnicodeDecodeError):
+            self.db2_data_source.read_data(
+                self.logger, self.spark, self.config, "SAMPLE_TABLE", self.schema
+            )
+
+        # 验证日志记录
+        self.logger.error.assert_called_with("Error details: 'ascii' codec can't decode byte 0xa5 in position 0: ordinal not in range(128)")
 
 if __name__ == '__main__':
     unittest.main()
