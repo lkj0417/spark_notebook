@@ -1,12 +1,26 @@
 # Apache Spark 学习笔记
 
+> 本文是 Apache Spark 的入门与实践笔记，示例主要基于 Spark 2.4.3、Scala 2.11 和 Java 8。Spark 及其生态版本迭代较快；使用示例前，请先核对集群实际版本、语言版本和对应的官方文档。
+
+## 目录
+
+- [一、Spark 介绍](#一-spark-介绍)
+- [二、Spark 快速入门](#二-spark-快速入门)
+- [三、Spark Core 工程开发](#三-spark-core-工程开发)
+- [四、弹性分布式数据集 RDD](#四-弹性分布式数据集-rdd)
+- [五、Spark 程序运行](#五-spark-程序运行)
+- [六、Spark SQL](#apache-spark-sql)
+- [七、Spark Streaming](#apache-spark-streaming)
+- [八、Spark 项目实践](#六-spark项目)
+- [附录](#附录)
+
 ## 一、 Spark 介绍
 
 > 官网：https://spark.apache.org/
 
-Spark 是一个支持 多语言 客户端开发 的 **基于内存的** 通用并行计算框架，目的是 让数据分析更加快速。跟它相对的是其它的传统⼤数据技术 Hadoop的MapReduce以及Flink流式实时计算引擎等。
+Apache Spark 是一个支持多语言 API 的分布式计算引擎，可用于批处理、SQL、流处理、机器学习和图计算。它既能利用内存加速重复计算，也会根据存储级别将数据写入磁盘；因此，“基于内存”不代表所有数据和中间结果都必须常驻内存。
 
-Spark包含了⼤数据领域常⻅的各种计算框架：⽐如Spark Core⽤于离线计算，Spark SQL⽤于SQL的交互式查询，Spark Streaming⽤于实时流式计算，Spark MLlib⽤于机器学习，Spark GraphX⽤于图计算等。
+Spark 提供多个面向不同任务的组件：Spark Core 提供基础执行能力，Spark SQL 处理结构化数据，Structured Streaming 提供流处理 API，MLlib 提供机器学习功能，GraphX 提供图计算 API。旧版 Spark Streaming 采用微批处理模型；新项目通常优先评估 Structured Streaming。
 
 ### 1. Spark的核心模块
 
@@ -14,29 +28,31 @@ Spark包含了⼤数据领域常⻅的各种计算框架：⽐如Spark Core⽤�
 
 - Spark core：Spark Core中提供了Spark最基础与最核⼼的功能，Spark 其他的功能如：Spark SQL、Spark Streaming、GraphX、MLlib 都是在 Spark Core的基础上进⾏扩展的。
 - Spark SQL：通过SQL的方式来操作Spark读取的数据
-- Spark Streaming：SparkStreaming 用于实时计算中（流处理），Spark streaming的处理思想是：只要我处理的批次间隔足够小，那么我就是实时处理（微批处理）
+- Spark Streaming：旧版 DStream API 以微批次方式处理流数据。它适合了解传统 Spark 流处理模型；新项目通常优先考虑 Structured Streaming。
 - Spark MLlib：机器学习相关的算法库。MLlib 不仅提供了模型评估、数据导⼊等额外的功能，还提供了⼀些更底层的机器学习原语。
 - Spark GraphX：面向图计算的一些框架和算法库
 
-### 2. Spark的特点
+### 2. Spark 的特点
 
 - 开发上手快：哪怕没有学习过MapReduce，只需要简单几行代码，就可以完成一个计算流程。（因为Spark封装了很多的方法以及算子）
-- Spark支持多语言开发：java、scala、python、SQL
-- 与hadoop可以无缝集成：Spark是一个通用的计算框架，本身是在hadoop之后发展出来的，spark+hadoop（hive）的组合是行业内大数据的主流组合。
-- 活跃度高：虽然已经诞生很多年，但是目前还是非常火热的一个计算框架，经过了很多公司的生产实践。
+- Spark 支持 Scala、Java、Python、R 和 SQL 等接口，具体功能支持因 API 和版本而异。
+- Spark 可以运行在 Standalone、YARN、Kubernetes 等集群管理器上，也可读取 HDFS 等 Hadoop 生态系统中的数据；它不要求必须依赖 Hadoop。
+- Spark 的 DAG 调度、缓存和 SQL 优化器等功能可提升多种工作负载的开发效率，但实际性能取决于数据规模、分区、资源和工作负载，不能仅依据框架名称判断。
 
 ### 3. Spark和MapReduce的对比
 
-MapReduce: 基于磁盘的批处理模型，分为 Map和 Reduce两阶段，中间数据需写入**磁盘**。这种设计导致大量 I/O 开销，尤其对迭代计算效率较低。
+Hadoop MapReduce 通常将 map 与 reduce 之间的中间结果写入磁盘。该模型简单且具有成熟的容错机制，但多轮迭代会产生较多 I/O。
 
-Spark: 采用 内存计算和弹性分布式数据集（RDD）模型，中间结果可缓存于**内存**中复用，减少磁盘交互。通过 DAG（有向无环图）调度优化任务执行顺序，减少 Shuffle 次数。
+Spark 使用 DAG 执行模型；RDD 或 DataFrame 在需要重复使用时可以缓存，以减少重复读取和计算。Spark 也会将 shuffle 数据写入磁盘，内存不足时还可能溢写，因此不能假设中间数据始终在内存中或 Spark 一定减少 shuffle。
 
-|    **场景**    |        **MapReduce**（慢、稳）         |    **Spark**（快、不是特别稳）     |
-| :------------: | :------------------------------------: | :--------------------------------: |
-| **离线批处理** | ✔️ 海量数据 ETL、日志分析（低成本存储） | ✔️ 中小规模数据批处理（高速度要求） |
-|  **迭代计算**  |       ❌ 效率低（需多次磁盘读写）       |  ✔️ 机器学习、图计算（如 GraphX）   |
-| **实时流处理** |                ❌ 不支持                |   ✔️ 微批处理（Spark Streaming）    |
-| **交互式查询** |                ❌ 延迟高                | ✔️ Spark SQL（低延迟 Ad-hoc 查询）  |
+| 场景 | Hadoop MapReduce | Apache Spark |
+| :-- | :-- | :-- |
+| 批处理 | 成熟的磁盘中间结果模型，适合批量作业 | DAG 执行；可缓存复用的数据，适用于多种批处理任务 |
+| 迭代计算 | 反复读写中间结果时开销较大 | 缓存中间数据可减少重复计算，需结合内存容量评估 |
+| 流处理 | 经典 MapReduce 面向有限数据集，不提供原生连续流 API | 可使用 Structured Streaming；Spark Streaming 是旧版微批 API |
+| SQL 分析 | 通常需借助其他 SQL 引擎 | Spark SQL 提供 DataFrame、SQL 和优化执行计划 |
+
+> 两者定位和使用场景并不完全相同。选择时应同时考虑延迟要求、容错语义、运维成本、数据源和团队经验。
 
 ## 二、 Spark的快速入门
 
@@ -805,4 +821,3 @@ spark streaming + kafka
    ```
 
    
-
