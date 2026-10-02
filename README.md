@@ -313,8 +313,9 @@ Structured Streaming 的检查点还会保存查询进度和状态，以支持�
 
 ### 1. 打包程序
 
-1. 将 `setMaster("local") `注释掉，因为我们要提交到集群中运行
-2. 通过maven进行打包  `mvn clean pacakge `
+1. 本地测试使用的 `setMaster("local[*]")` 不应覆盖集群提交参数；建议将 master 通过 `spark-submit` 指定。
+2. 通过 Maven 打包：`mvn clean package`。
+3. 明确依赖的打包策略：集群已提供的 Spark 依赖通常设为 `provided`，业务依赖则按发行包和集群要求打包或提供。
 
 ### 2. 提交任务到yarn
 
@@ -337,17 +338,16 @@ spark-submit --class org.example.App2 --master yarn --deploy-mode client --execu
 | --------------- | ---------------------- | ------------------------------------------------------------ |
 | class           | com.example.WordCount2 | 作业的主类。                                                 |
 | master          | yarn                   | 在企业中多使用 Yarn 模式。                                   |
-|                 | yarn-client            | 等同于 `--master yarn --deploy-mode client`此时不需要指定 `deploy-mode`。 |
-|                 | yarn-cluster           | 等同于 `--master yarn --deploy-mode cluster`此时不需要指定 `deploy-mode`。 |
-| deploy-mode     | client                 | client 模式表示作业的 AM 会放在 Master 节点上运行（提交作业的节点本地jvm中）。如果设置此参数，需要指定 Master 为 yarn。 |
-|                 | cluster                | cluster 模式表示 AM 会随机的在 Worker 节点中的任意一台上启动运行。如果设置此参数，需要指定 Master 为 yarn。 |
-| driver-memory   | 4g                     | Driver 使用的内存，不可超过单机的总内存。                    |
+| deploy-mode     | client                 | Driver 在提交端进程中运行；提交端需在应用运行期间保持可用。 |
+|                 | cluster                | Driver 在集群中运行，提交客户端退出后应用仍可继续运行。 |
+| driver-memory   | 4g                     | Driver 可用内存上限之一；实际资源还受集群管理器和部署配置约束。 |
 | num-executors   | 2                      | 创建 Executor 的个数。                                       |
-| executor-memory | 2g                     | 各个 Executor 使用的最大内存，不可以超过单机的最大可使用内存。 |
+| executor-memory | 2g                     | 各个 Executor 请求的堆内存；容器总内存还可能包括额外开销。 |
 | executor-cores  | 2                      | 各个 Executor 使用的并发线程数目，即每个 Executor 最大可并发执行的 Task 数目。 |
 
 <img src="./Apache Spark.assets/image-20250322110355871.png" alt="image-20250322110355871" style="zoom:80%;" />
 
+> Spark 2.4 仍可见 `yarn-client` / `yarn-cluster` 等旧写法；新命令建议显式使用 `--master yarn` 和 `--deploy-mode client|cluster`。部署模式、资源参数及可用选项以当前 Spark 版本和集群策略为准。
 
 
 涉及的一些概念：
@@ -359,31 +359,13 @@ spark-submit --class org.example.App2 --master yarn --deploy-mode client --execu
 
 完整运行过程说明如下:
 
-**1.**用户提交任务 用户通过spark-submit提交任务，首先会启动一个Driver进程，其实就是我们编写的Spark程序的main()函数，同时会初始化SparkContext，进而初始化DAGScheduler和TaskScheduler等Spark内部关键组件;
+1. `spark-submit` 启动应用 Driver。Driver 执行应用入口代码并创建 `SparkContext`，初始化调度器等组件。
+2. 集群管理器根据部署模式和资源配置分配 Executor 资源。YARN、Standalone 和 Kubernetes 的资源申请与进程启动流程并不相同。
+3. Executor 启动后向 Driver 注册并等待任务。
+4. action 触发 Job；DAGScheduler 根据依赖关系划分 stages，TaskScheduler 将每个 stage 的 tasks 分发给 Executor。
+5. Executor 在 task 线程中处理分区数据，并向 Driver 汇报执行状态和结果。
 
-**2.Driver**申请资源
-
-Driver会向master申请资源，准备去执行Spark算子操作逻辑;
-
-**3.Master**下发任务
-
-Master收到Driver提交的作业请求之后，向Worker节点指派任务，其实就是让其启动对应的Executor进程;
-
-**4.Worker**启动**Executor**进程
-
-Worker节点收到Master节点发来的启动Executor进程任务，就启动对应的Executor进程，同时向Master汇 报启动成功，处于可以接收任务的状态;
-
-**5.Executor**向**Driver**反向注册
-
-当Executor进程启动成功后，就向Driver进程反向注册，以此来告诉Driver，谁可以接收任务，执行Spark作 业;Driver接收到注册之后，就知道了向谁发送Spark作业，这样在Spark集群中就有一组独立的executor进程为该driver服务;
-
-**6.Driver**进行**Stage**划分和**Task**分发
-
-SparkContext重要组件运行—DAGScheduler和TaskScheduler，DAGScheduler根据宽依赖将作业划分为若干stage，并为每一个阶段组装一批Task组成TaskSet(TaskSet里面就包含了序列化之后的我们编写的Spark transformation);然后将TaskSet交给TaskScheduler，由其将任务分发给对应的Executor;
-
-**7.Executor**运行**Task** Executor进程接收到Driver发送过来的Task，进行反序列化，然后将这些Task放到本地线程池中，调度我们
-
-的作业的执行。
+> Application、Job、Stage 和 Task 是不同层次的执行概念：一个应用可包含多个 Job；Job 通常拆分为多个 Stage；每个 Stage 包含若干 Task，Task 数量通常与该 Stage 的分区数对应。
 
 
 
@@ -393,9 +375,9 @@ SparkContext重要组件运行—DAGScheduler和TaskScheduler，DAGScheduler根�
 
 ## 一、 SparkSQL 介绍
 
-SparkSQL 是Spark 用来处理**结构化数据**的一个模块，可以通过SQL的方式访问和处理数据。它提供了一个叫做DataFrame的编程抽象结构数据模型，可以简单理解为 DataFrame = rdd + schema信息。SparkSQL底层有一个SQL的查询引擎，帮助用户将SQL翻译成底层的RDD编程模型，从而执行任务。
+Spark SQL 是 Spark 用来处理**结构化数据**的模块，可通过 SQL 和 DataFrame API 访问数据。DataFrame 带有列名和类型等 schema 信息；Spark SQL 通过 Catalyst 优化器和执行引擎生成执行计划。DataFrame 不宜简单等同于“RDD 加 schema”，因为两者执行抽象、优化能力和 API 都不同。
 
-SparkSQL 前身是shark，但是shark过度依赖hive，导致很多方面无法进一步优化。
+Spark SQL 的前身项目是 Shark。当前 Spark SQL 可连接多种数据源，也可与 Hive metastore 集成；数据格式、catalog 和连接器支持应根据 Spark 版本确认。
 
 SparkSQL的特点：
 
@@ -405,7 +387,7 @@ SparkSQL的特点：
 
 2. 无缝集成RDD
 
-   SparkSQL虽然编程对象是DataFrame，但是他能够很轻松的转换为RDD。RDD也可以通过附加schema来转换为DataFrame。
+   Spark SQL 可以与 RDD API 互操作，但转换会影响优化边界；需要利用 DataFrame/SQL 的优化能力时，尽量在该抽象中完成可表达的操作。
 
 
 
@@ -419,7 +401,7 @@ RDD是分布式的Java对象的集合，如上图所示的RDD[Person]数据集�
 
 
 
-SparkSQL 程序的入口不再是 `SparkContext`，而是`SparkSession`，SparkSession是在sparkcontext的基础上进一步封装，换句话说，sparkSession持有sparkContext并且还有其他功能。 
+Spark SQL 程序通常通过 `SparkSession` 访问 SQL 功能。`SparkSession` 提供 DataFrame、SQL、catalog 等接口，并可通过 `spark.sparkContext` 获取底层 `SparkContext`。
 
 
 
@@ -431,7 +413,7 @@ DataFrame和dataset的关系
 
 可以认为，Spark中的DataFrame就是特殊的dataset（类型为Row的dataset）。
 
-Dataset是类型安全的（或者说Dataset是强类型的），而DataFrame则是早期只有类型为Row的一种数据结构，后续被Dataset取代。
+在 Scala/Java API 中，`Dataset[T]` 可以使用类型化对象；`DataFrame` 是 `Dataset[Row]` 的别名，通常通过列名访问字段。Python API 的 DataFrame 同样基于 Row 结构，不提供 Scala/Java Dataset 的静态类型安全保证。
 
 ### 1. 创建DataFrame的方式
 
@@ -442,13 +424,13 @@ Dataset是类型安全的（或者说Dataset是强类型的），而DataFrame则
 
 ### 2. 对DataFrame做操作
 
-有两种方式可以对DataFrame进行操作，一种叫 DSL（domain spec language），一种叫SQL。通常来说，我们习惯直接使用SQL的方式进行操作，DSL比较少用。
+可使用 DataFrame DSL（领域特定语言）或 SQL 操作数据。两种方式最终由 Spark SQL 构建执行计划；选择更便于表达和维护的方式即可。
 
-具体用法参考代码。
+> 可使用 `explain()` 查看逻辑或物理计划，使用 Spark UI 观察实际运行情况；对大规模数据谨慎使用 `collect()`，因为它会将全部结果拉回 Driver。
 
 ### 3. 输出
 
-1. 输出到控制台（show、collect+print）
+1. 输出到控制台（`show` 用于预览；`collect` 会将结果传到 Driver，应仅用于结果集足够小的情况）
 2. 保存到文件
 3. 保存到外部连接（jdbc、hive）
 
@@ -471,6 +453,8 @@ Dataset是类型安全的（或者说Dataset是强类型的），而DataFrame则
 - 持续处理：能够连续处理**无边界**的数据流
 - 动态计算：实时对数据进行分析、聚合和转换等
 
+> 流处理系统通常还需明确事件时间或处理时间、乱序数据处理、状态管理、容错与端到端交付语义。“实时”延迟取决于系统设计和资源配置，并不意味着零延迟。
+
 应用场景
 
 - 实时推荐系统
@@ -481,19 +465,21 @@ Dataset是类型安全的（或者说Dataset是强类型的），而DataFrame则
 
 ## 二、 Spark streaming介绍
 
+> 本节讨论 Spark Streaming 的 DStream API（Spark 2.4 时代的微批处理接口）。这是旧式 API；新应用应优先评估 Structured Streaming，并确认所需数据源与 sink 的版本支持。
+
 <img src="./Apache Spark.assets/image-20250325211945822.png" alt="image-20250325211945822" style="zoom:80%;" />
 
 数据是源源不断产生的，我们通过SparkStreaming实时接收这种数据，并通过将数据进行切分的方式来处理。
 
 ### 1. 流处理思想
 
-一个无边界的数据流，只要我们按照时间片段（一般是比较短的时间片段）进行切割，就可以变成无数多个 有边界的数据，这个有边界的数据在Spark中就是 RDD
+一个无边界的数据流可按固定时间间隔切分为一批有边界的数据；在 DStream 中，每个批次对应一个 RDD。批次间隔会影响处理延迟和调度开销，需根据负载测试选择。
 
 <img src="./Apache Spark.assets/image-20250325213017249.png" alt="image-20250325213017249" style="zoom:80%;" />
 
 `JavaStreamingContext streamingContext = new JavaStreamingContext(sc, Durations.seconds(5));`
 
-这里的第二个参数，就是控制时间片段的大小，通常是按照秒级切分
+第二个参数是批次间隔，通常按秒配置；实际间隔应结合单批处理耗时和目标延迟设置，避免批次持续积压。
 
 ### 2. DStream概念
 
@@ -565,7 +551,7 @@ SparkStreaming中的数据抽象叫做DStream，英文全称  Discretized Stream
   - 可以控制状态类型，不一定要跟数据的value类型一致
   - 实现上比较复杂，适用于大规模的状态管理（实验性接口）
 
-如果即想使用状态，又怕状态无限膨胀，最佳实践是使用额外存储作为状态后端。
+若状态随 key 数量持续增长，应定义状态过期与清理策略，并评估状态规模和恢复语义。外部存储可以用于业务状态管理，但会引入额外的读写和一致性设计，不应简单视作 Spark 状态管理的替代品。
 
 
 
@@ -584,20 +570,16 @@ SparkStreaming中的数据抽象叫做DStream，英文全称  Discretized Stream
 Accumulators, Broadcast Variables, and Checkpoints
 
 - 累加器（executor只写）
-  - executor只能对累加器做累加的动作
-  - 多个executor在处理数据的时候，都对累加器做了操作，但是不会产生安全问题，因为spark帮我们保证了（一致性协议）
-  - 一般用于统计
+  - 适合在 executor 端进行任务级计数和调试统计，driver 端读取最终值。
+  - 任务重试或 stage 重算可能影响累加器的更新次数；不要用它实现精确业务账目或依赖副作用的更新。
 - 广播变量（executor只读）
   - 广播变量由driver创建并广播，executor只能读取值，不能修改值
-  - 广播变量广播之后，会在每个executor中保存一份
-  - 广播变量发送给executor只会发送一次，不会因为每个executor由多个task而发送多次
+  - 广播变量可减少多个 task 重复传送小型只读数据的开销；是否广播应结合数据大小和集群内存评估。
+  - 生命周期由应用管理，使用完可调用 `unpersist()` 或 `destroy()` 释放资源。
 
-- 从checkpoint重启spark streaming程序
-  - 累加状态被重置了
-    - 依赖外部存储（redis、hbase），重启的时候从外部初始化初始值
-  - 假设streaming挂了，但是socket还在不断的发数据
-    挂了到重启的这段时间的数据就会丢失
-    - 回放数据（socket数据源不支持） --> 使用支持回放的数据源，比如kafka，通过offset机制来保证 
+- 从 checkpoint 恢复 Spark Streaming 程序时，恢复能力取决于 checkpoint 内容、输入源和输出端的语义。
+  - Socket 等不支持 offset 或重放的数据源无法保证故障期间的数据完整性；需要可靠恢复时，应选择支持重放的数据源。
+  - 外部状态需单独定义持久化及恢复策略；checkpoint 不会自动保存任意外部系统中的业务状态。
 
 
 
@@ -611,13 +593,14 @@ Accumulators, Broadcast Variables, and Checkpoints
 
    ```java
    resultDstream.foreachRDD(rdd -> {
-     // 获取数据库连接（连接池中get connection
-     // insert or update 到数据库
-     rdd.foreach(record ->{
-     	saveToDb()
+     rdd.foreachPartition(records -> {
+       // 每个分区复用连接，并批量写入；妥善处理连接关闭、重试和幂等性。
+       savePartitionToDb(records);
      })
    });
    ```
+
+   > 避免为每条记录创建数据库连接。Spark task 可能重试，因此 sink 写入逻辑应设计为幂等，或明确重复写入的处理方式。
 
 ### 5. SQL 的方式处理DStream
 
