@@ -58,12 +58,14 @@ Spark 使用 DAG 执行模型；RDD 或 DataFrame 在需要重复使用时可以
 
 ### 1. spark 的安装
 
-如果在一个没有安装过Spark的系统中，需要安装Spark的话，可以遵循以下步骤
+如果在一个没有安装过 Spark 的系统中，需要安装 Spark，可以遵循以下步骤：
 
-需要注意 Spark 和 hadoop 有版本对应关系
+1. 根据目标集群选择 Spark、Scala、Java 和 Hadoop 兼容版本，并查看该版本的官方安装文档。
+2. 下载对应发行包，解压到目标目录。
+3. 配置 `JAVA_HOME`，并按运行模式配置必要的 Hadoop 环境变量和配置文件。
+4. 先使用本地模式验证安装，再连接集群运行。
 
-1. 下载安装包
-2. 上传并解压
+> Spark 发行包名称中的 Hadoop 版本通常表示其 Hadoop 客户端依赖版本；请以发行包说明和集群配置为准，不要只凭版本号推断兼容性。
 
 ### 2. 进入Spark的交互式终端
 
@@ -124,25 +126,29 @@ collect: Array[String] = Array(hello me)
 
 > 以 Spark Core 为例
 
-### 1. 创建maven工程
+### 1. 创建 Maven 工程
 
 ```xml
-<!-- 需要引入spark-core的依赖 -->
-		<dependency>
-      <groupId>org.apache.spark</groupId>
-      <artifactId>spark-core_2.11</artifactId>
-      <version>2.4.3</version>
-    </dependency>
+<!-- 示例版本适用于本文中的 Spark 2.4.3 / Scala 2.11 笔记 -->
+<dependency>
+  <groupId>org.apache.spark</groupId>
+  <artifactId>spark-core_2.11</artifactId>
+  <version>2.4.3</version>
+</dependency>
 ```
+
+部署到已安装 Spark 的集群时，通常将 Spark 依赖设为 `provided`，避免把集群已提供的 Spark 库重复打入应用包；本地运行则需确保运行时 classpath 中有相应依赖。
 
 ### 2. 创建sparkContext对象
 
 ```java
 SparkConf sparkConf = new SparkConf()
-                .setMaster("local")
-                .setAppName("my spark app");
+        .setMaster("local[*]")
+        .setAppName("my-spark-app");
 JavaSparkContext sc = new JavaSparkContext(sparkConf);
 ```
+
+`local[*]` 表示本地使用可用处理器核心数。提交到集群时，通常不在代码中固定 `master`，而由 `spark-submit --master` 指定；完成后应在 `finally` 中调用 `sc.stop()` 释放资源。
 
 ### 3. 获取数据
 
@@ -153,7 +159,7 @@ sc.textFile("hdfs://192.168.56.101:8020/path/to/file");
 
 ### 4. 通用计算
 
-transformation、action
+RDD 操作分为 transformation（转换）和 action（行动）。转换会构造新的 RDD，action 会触发计算；具体操作见下文。
 
 ### 5. 输出数据
 
@@ -209,7 +215,9 @@ RDD的转换操作是**惰性求值**的，意思是所有的转换操作，在�
 | **reduceByKey**(*func*, [*numPartitions*])                   | When called on a dataset of (K, V) pairs, returns a dataset of (K, V) pairs where the values for each key are aggregated using the given reduce function *func*, which must be of type (V,V) => V. Like in `groupByKey`, the number of reduce tasks is configurable through an optional second argument. |
 | **aggregateByKey**(*zeroValue*)(*seqOp*, *combOp*, [*numPartitions*]) | When called on a dataset of (K, V) pairs, returns a dataset of (K, U) pairs where the values for each key are aggregated using the given combine functions and a neutral "zero" value. Allows an aggregated value type that is different than the input value type, while avoiding unnecessary allocations. Like in `groupByKey`, the number of reduce tasks is configurable through an optional second argument. |
 | **repartition**(*numPartitions*)                             | Reshuffle the data in the RDD randomly to create either more or fewer partitions and balance it across them. This always shuffles all data over the network. |
-| **coalesce**(*numPartitions*)                                | Decrease the number of partitions in the RDD to numPartitions. Useful for running operations more efficiently after filtering down a large dataset. |
+| **coalesce**(*numPartitions*)                                | 减少分区数；默认不进行完整 shuffle，可能导致分区数据不均。需要重新均衡分区时可选择带 shuffle 的方式。 |
+
+> `reduceByKey` 和 `aggregateByKey` 通常比先 `groupByKey` 再聚合更高效，因为它们可以先在 map 端合并部分结果。转换是否触发 shuffle 取决于具体算子和参数。
 
 2. action
 
@@ -255,48 +263,29 @@ RDD的转换操作是**惰性求值**的，意思是所有的转换操作，在�
 
 ### 5. 分区和并行度
 
-在spark中，所谓的分区（partition）就是指的是数据分布的物理单元。分区的数量会影响任务的数量，分区越多，task越多
+在 Spark 中，分区（partition）是 RDD 或 DataFrame 的逻辑数据划分，也是 stage 中 task 的基本调度单位。一个 task 通常处理一个分区；分区数会影响 task 数量，但分区不一定与 HDFS 文件块或物理节点一一对应。
 
-并行度（parallelism）是任务执行的并发能力，并行度指的是同一时间内，有多少个task参与计算，并行度越高，通常任务的性能越好。
+并行度描述可同时执行的 task 数量，受分区数、可用 executor 核心数和资源调度等因素影响。提高并行度并不一定提升性能，还要考虑数据倾斜、task 开销和集群资源。
 
 - 分区
-  - 读取文件时，分区数按照文件的快大小分隔分区（hdfs）
-  - 并行化集合时：由参数numSlices指定分区数（不指定的情况下默认为CPU核心数）
-  - shuffle后：  `spark.sql.shuffle.partitions` 默认200，可以在spark sql客户端中通过set来设置
-  - 自定义分区器：按照 numPartitions来控制分区数
+  - 文件读取分区数受文件系统、文件大小、输入格式和读取参数等影响。
+  - 并行化集合时可指定分区数；默认值与 Spark 配置及运行环境有关。
+  - RDD 和 Spark SQL 的 shuffle 分区使用不同配置。本文 Spark 2.4 中，SQL 默认 shuffle 分区配置为 `spark.sql.shuffle.partitions`（默认值 200）；RDD 算子的分区数由算子参数、分区器和相关配置决定。
+  - 可通过 `repartition`、`coalesce` 或自定义分区器调整分区，但应在观察任务运行和数据分布后决定。
 
-- 并行度
-  - 并行度取决于 executor数量（人） * 每个executor的CPU核心数（每个人同一时间能做几件事情）
-
-合理的调整分区数大小和并行度大小，可以达到优化任务执行性能的效果
-
-分区数不是越多越好，太多的话每个task操作的数据量很小，并且task需要多轮才能执行完成，太少的话，部分executor没活干（无法充分利用集群资源）
-
-一般情况下，我们尽量让分区数接近spark集群运行时的可用核心数，避免资源限制或任务过载。
-
-通常分区数为总并行度的1~4倍较为合理，当然也要考虑每个分区处理的数据量。
-
-
-
-
-
-cache或者persist接口只有在遇到了action之后，才会触发真正的执行。
+> 调优时可结合 Spark UI 查看 stage、task 数量、数据倾斜和 shuffle 读写量。不存在适用于所有集群的固定分区倍数。
 
 ### 6. 持久化和缓存
 
-持久化：就是把数据存储到一个地方（磁盘），需要用的时候再拿出来
+缓存和持久化（`cache` / `persist`）用于在同一个 Spark 应用内复用计算结果，不等同于长期数据存储。Spark 可以按存储级别保留分区在内存或磁盘中；未能保留的分区可能需要重新计算。应用结束后，这些缓存数据会被清理。
 
-缓存：就是把数据存储到一个地方（内存），需要用的时候再拿出来
-
-通常持久化就是保留到永久存储介质，通常为磁盘；缓存就是保存到内存中。但是在spark中，不管是内存还是磁盘，在任务结束的时候都会销毁，所以spark中的持久化和缓存其实是相同的概念，只不过cache是特殊的persist
-
-常用的是  MEMORY_ONLY（消耗内存多，但是块）、MEMORY_AND_DISK
+常见存储级别包括 `MEMORY_ONLY` 和 `MEMORY_AND_DISK`。选择时需权衡内存占用、序列化开销、磁盘 I/O 与重算成本。
 
 <img src="./Apache Spark.assets/image-20250322115136723.png" alt="image-20250322115136723" style="zoom:80%;" />
 
 cache本质就是 StorageLevel.MEMORY_ONLY 的persist
 
-| torage Level                           | Meaning                                                      |
+| Storage Level                          | Meaning                                                      |
 | -------------------------------------- | ------------------------------------------------------------ |
 | MEMORY_ONLY                            | Store RDD as deserialized Java objects in the JVM. If the RDD does not fit in memory, some partitions will not be cached and will be recomputed on the fly each time they're needed. This is the default level. |
 | MEMORY_AND_DISK                        | Store RDD as deserialized Java objects in the JVM. If the RDD does not fit in memory, store the partitions that don't fit on disk, and read them from there when they're needed. |
@@ -312,15 +301,9 @@ cache本质就是 StorageLevel.MEMORY_ONLY 的persist
 
 > 很少用
 
-设置检查点（checkpoint）方式，本质上是将RDD写入磁盘进行存储。当RDD在进行宽依赖运算时，只需要在中间阶段设置一个检查点进行容错，即通过 Spark中的sparkContext对象调用setCheckpoint()方法，设置一个容错文件系统目录(如 HDFS)作为检查点checkpoint，将checkpoint 的数据写入之前设置的容错文件系统中进行高可用的持久化存储， 若是后面有节点出现宕机导致分区数据丢失,则可以从作为检查点的RDD开始重新计算，不需要进行从头到尾的计 算，这样就会减少开销。
+RDD checkpoint 会将计算结果写入可靠存储（例如 HDFS），并截断 RDD 的 lineage。使用前需通过 `SparkContext.setCheckpointDir(path)` 设置目录，再对目标 RDD 调用 `checkpoint()`；检查点通常在后续 action 执行时写入。它会产生额外的计算和存储开销，应在 lineage 过长或恢复成本较高时使用。
 
-简单理解，**Checkpoint** 就是一种将 RDD 或 DataFrame/Dataset 持久化到可靠存储（如 HDFS 或本地文件系统）的机制，用于切断 RDD 的血缘关系（Lineage），避免任务失败时从头重新计算。
-
-checkpoint还有一个作用，可以用于中断任务后，重启任务加载上个任务的数据
-
-
-
-通常的使用场景 是在 sparkStreaming中。
+Structured Streaming 的检查点还会保存查询进度和状态，以支持故障恢复；它与 RDD checkpoint 的用途和格式不同。检查点目录应使用可靠存储，并遵循具体 API 的恢复要求。
 
 ## 五、spark 程序运行
 
