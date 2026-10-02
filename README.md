@@ -623,17 +623,17 @@ Accumulators, Broadcast Variables, and Checkpoints
 
 ### 1. 数据集介绍
 
-来源：开源数据集 https://files.grouplens.org/datasets/movielens/ml-25m.zip
+来源：[MovieLens 25M 数据集](https://files.grouplens.org/datasets/movielens/ml-25m.zip)。使用时请遵守数据集的许可和使用条款。
 
 - movies.csv
 
-  该文件是电影数据，对应为维读表，包含62423多部电影，movies.csv 的数据格式为：`movieId,title,genres`
+  该文件是电影维度数据，包含 62,423 部电影。格式为：`movieId,title,genres`。
 
   `1,Toy Story (1995),Adventure|Animation|Children|Comedy|Fantasy`
 
 - ratings.csv
 
-  电影的评分数据，对应为事实表数据，包好25000095评分数据，ratings.csv 的数据格式为： `userId,movieId,rating,timestamp`
+  该文件是电影评分事实数据，包含 25,000,095 条评分。格式为：`userId,movieId,rating,timestamp`。
 
   `1,307,5.0,1147868828`
 
@@ -648,11 +648,11 @@ Accumulators, Broadcast Variables, and Checkpoints
 1. 搭建项目
 2. 读取数据源（hdfs上面）
 3. 分别实现三个需求
-4. 讲结果保存到外部（MySQL）
+4. 将结果保存到外部存储（例如 MySQL）
 
 ### 4. 打包上线
 
-1. scala程序需要添加scala的打包插件
+1. Scala 程序需要配置 Scala Maven 插件。
 
    ```xml
            <sourceDirectory>src/main/scala</sourceDirectory>
@@ -671,7 +671,7 @@ Accumulators, Broadcast Variables, and Checkpoints
                        </execution>
                    </executions>
                </plugin>
-               <!-- 将依赖一起打进jar包的插件，另一种常用的插件是shaded -->
+               <!-- 可用 Assembly 或 Shade 插件打包业务依赖；避免重复打入集群已提供的 Spark/Hadoop 依赖。 -->
                <plugin>
                    <artifactId>maven-assembly-plugin</artifactId>
                    <configuration>
@@ -696,17 +696,17 @@ Accumulators, Broadcast Variables, and Checkpoints
 
    
 
-2. 可以通过指定profile的方式控制哪些包需要打进 jar 包中。（spark的相关包不需要引入，因为集群已经自带了）
+2. 可以通过 Maven profile 控制哪些依赖需要打入应用包中。只有在目标集群确认已提供兼容版本时，才将 Spark/Hadoop 依赖设为 `provided`。
 
 <img src="./Apache Spark.assets/image-20250330115734974.png" alt="image-20250330115734974" style="zoom:80%;" />
 
-3. 提交到集群，命令如下：（128 cores -->256线程）
+3. 提交到集群。以下命令仅为参数示例，executor 数、核数和内存需要结合队列配额与作业负载调整：
 
    ```bash
    spark-submit --class com.example.spark.ClusterApp --master yarn --deploy-mode cluster --executor-memory 512M --num-executors 1 --executor-cores 2 spark_project-1.0-SNAPSHOT-jar-with-dependencies.jar hdfs://hadoop:9000/data/movies.csv hdfs://hadoop:9000/data/ratings_all.csv
    ```
 
-   如果发现有问题，想在生产测试一下sql的结果，可以使用 --deploy-mode client ，会将一些driver的日志输出到控制台。
+   `--deploy-mode client` 会让 Driver 在提交客户端所在进程运行，便于查看 Driver 日志；不要将交互式调试配置直接当作生产配置。
 
 4. 后续，一般是会通过调度系统定时调度（比如airflow等）
 
@@ -719,41 +719,43 @@ vim spark-defaults.conf
 spark.eventLog.enabled           true
 spark.eventLog.dir               hdfs://hadoop:9000/sparkHistory
 
-vim spark-evn.sh
+vim spark-env.sh
 SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=hdfs://hadoop:9000/sparkHistory/"
 ```
 
-创建hdfs目录： `hadoop fs -mkdir hdfs://hadoop:9000/sparkHistory/`
+确保事件日志目录已创建，且运行应用的身份具备写入权限、History Server 具备读取权限：
 
-启动： `sh sbin/start-history-server.sh`
+```bash
+hadoop fs -mkdir -p hdfs://hadoop:9000/sparkHistory/
+```
+
+启动：`sbin/start-history-server.sh`
 
 
 
 ### 2. Spark的thriftserver
 
-> spark on hive ： 通过spark来执行任务（spark作为sql入口），解析sql和执行sql都是由spark来完成，但是底层表的一些元数据信息由hive来提供（metastore）
+> Spark 与 Hive metastore 集成时，可由 Spark 执行 SQL，并通过 Hive metastore 读取表元数据。读取 Hive 表数据还需配置相应文件、依赖和存储访问权限。
 
-跟hiveserver2一样，Spark也可以启动一个thriftserver进程，用于直接使用SparkSQL（不再需要创建项目，获取sparkSession之后再写SQL）
+Spark Thrift Server 提供 HiveServer2 兼容的 JDBC/ODBC 接口，可供 Beeline 等客户端执行 Spark SQL。
 
-启动thriftServer之前需要先进行配置（已经在集成环境中配置好了）
+启动前请按当前 Spark 版本的文档配置 Hive metastore、Hadoop 配置、数据库驱动及权限。常见检查项如下：
 
-1. 将hadoop和hive的配置文件放到spark的conf目录下（如果需要使用spark连接hive做操作的话）
-2. 将hive-site.xml中的  `hive.metastore.schema.verification`设置为false
-3. 将MySQL的驱动包放到spark的jars下
-4. 启动 `sh sbin/start-thriftserver.sh`
-5. 通过 spark安装目录下的 bin下的beeline进行连接  `bin/beeline -u jdbc:hive2://hadoop:10000 `
+1. 将所需的 Hadoop/Hive 配置放入 Spark 配置目录，确认 metastore 可访问。
+2. 确认 Hive metastore 使用的数据库驱动与配置正确；除非 Hive 版本文档明确要求，不要随意关闭 schema 校验。
+3. 按集群的依赖管理方式提供兼容的 JDBC 驱动。
+4. 启动 `sbin/start-thriftserver.sh`。
+5. 使用 Beeline 连接，例如：`bin/beeline -u 'jdbc:hive2://hadoop:10000'`。
 
 ### 3. 项目jdk版本问题
 
 <img src="./Apache Spark.assets/image-20250325210340576.png" alt="image-20250325210340576" style="zoom:80%;" />
 
-### 4. checkpoint+kafka恢复任务
+### 4. Checkpoint 与 Kafka 恢复
 
-整体思路： 设置检查点 + 数据重放
+对于使用 Spark Streaming Direct Kafka API 的旧版程序，恢复设计通常涉及 checkpoint、Kafka offset 和输出端幂等性。具体 API 与行为依赖 Spark Kafka connector 版本。
 
-spark streaming + kafka
-
-1. 任务本身开启了checkpoint（在生产环境中，checkpoint路径一般是hdfs上的，利用hdfs的分布式和副本机制）
+1. 配置可靠的 checkpoint 目录（生产环境通常使用有容错能力的分布式存储），并使用 `getOrCreate` 从有效检查点恢复。
 
    ```java
    JavaStreamingContext ssc = new JavaStreamingContext(sparkConf, Durations.seconds(5));
@@ -761,7 +763,7 @@ spark streaming + kafka
            ssc.checkpoint(checkpointDirectory);
    ```
 
-2. 重启任务的时候，一定是从上次结束的地方（检查点 checkpoint）继续
+2. 使用 Direct Kafka API 时，offset 范围可从每批次的 RDD 获取。检查点恢复与显式指定起始 offset 的优先级、行为，需按所用 connector 版本验证。
 
    ```java
            JavaStreamingContext ssc =
@@ -770,7 +772,7 @@ spark streaming + kafka
                    JavaStreamingContext.getOrCreate(checkpointDirectory, createContextFunc);
    ```
 
-3. 数据消费的时候，只有消费成功的时候才提交offset信息到kafka中
+3. 如需提交 offset 到 Kafka，可关闭自动提交，并仅在 sink 写入成功后提交对应 offset：
 
    ```java
    // Kafka参数配置
@@ -779,11 +781,10 @@ spark streaming + kafka
                kafkaParams.put("key.deserializer", StringDeserializer.class);
                kafkaParams.put("value.deserializer", StringDeserializer.class);
                kafkaParams.put("group.id", "spark-streaming-group");
-               kafkaParams.put("auto.offset.reset", <从指定offset启动>);
+               kafkaParams.put("auto.offset.reset", "earliest"); // 示例；也可按业务选择 latest
                kafkaParams.put("enable.auto.commit", false); // 关闭自动提交
-   // 中间处理数据
-   // 处理完数据之后再提交offset
+   // 处理当前批次并将结果写入 sink；确保写入成功后再提交相应 offset。
    ((CanCommitOffsets) stream.inputDStream()).commitAsync(offsetRanges);
    ```
 
-   
+   > 先写 sink 再提交 offset 通常仍可能在两步之间故障并导致重复写入；它不自动提供端到端 exactly-once。应使用幂等写入、事务性 sink/offset 协调，或在外部持久化 offset 并设计去重机制。Kafka 的自动提交、消费组状态和 Spark checkpoint 不能不加区分地视为同一份进度。
