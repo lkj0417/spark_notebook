@@ -9,9 +9,9 @@
 - [三、Spark Core 工程开发](#三-spark-core-工程开发)
 - [四、弹性分布式数据集 RDD](#四-弹性分布式数据集-rdd)
 - [五、Spark 程序运行](#五-spark-程序运行)
-- [六、Spark SQL](#apache-spark-sql)
-- [七、Spark Streaming](#apache-spark-streaming)
-- [八、Spark 项目实践](#六-spark项目)
+- [六、Spark SQL](#六-spark-sql)
+- [七、Spark Streaming](#七-spark-streaming)
+- [八、Spark 项目实践](#八-spark-项目实践)
 - [附录](#附录)
 
 ## 一、 Spark 介绍
@@ -122,7 +122,7 @@ scala> val collect = containMe.collect()
 collect: Array[String] = Array(hello me)
 ```
 
-## 三、 Spark的工程开发
+## 三、 Spark Core 工程开发
 
 > 以 Spark Core 为例
 
@@ -305,7 +305,7 @@ RDD checkpoint 会将计算结果写入可靠存储（例如 HDFS），并截断
 
 Structured Streaming 的检查点还会保存查询进度和状态，以支持故障恢复；它与 RDD checkpoint 的用途和格式不同。检查点目录应使用可靠存储，并遵循具体 API 的恢复要求。
 
-## 五、spark 程序运行
+## 五、 Spark 程序运行
 
 通常在开发的时候，会设置 master为 local，这样做是为了快速的在本地运行spark程序进行验证。
 
@@ -371,9 +371,9 @@ spark-submit --class org.example.App2 --master yarn --deploy-mode client --execu
 
 
 
-# Apache Spark SQL
+## 六、 Spark SQL
 
-## 一、 SparkSQL 介绍
+### 一、Spark SQL 介绍
 
 Spark SQL 是 Spark 用来处理**结构化数据**的模块，可通过 SQL 和 DataFrame API 访问数据。DataFrame 带有列名和类型等 schema 信息；Spark SQL 通过 Catalyst 优化器和执行引擎生成执行计划。DataFrame 不宜简单等同于“RDD 加 schema”，因为两者执行抽象、优化能力和 API 都不同。
 
@@ -391,9 +391,9 @@ SparkSQL的特点：
 
 
 
-## 二、 SparkSQL 编程模型
+### 二、Spark SQL 编程模型
 
-Spark SQL使用的数据抽象并非是RDD,而是DataFrame。在Spark1.3.0版本之前，DataFrame被称为 SchemaRDD。DataFrame使Spark具备了处理大規模结构化数据的能力。在Spark中，DataFrame是一种以RDD 为基础的分布式数据集，因此DataFrame可以完成RDD的绝大多数功能，在开发使用时，也可以调用方法将RDD 和DataFrame进行相互转换。DataFrame的结构类似于传统数据库的二维表格，并且可以从很多数据源中创建， 如结构化文件、外部数据库、Hive表等数据源。DataFrame与RDD在结构上的区别如下所示。
+Spark SQL 使用的主要数据抽象是 DataFrame/Dataset。早期版本曾使用 SchemaRDD 名称。DataFrame 是分布式的、有 schema 的数据抽象，可由结构化文件、外部数据库、Hive 表等数据源创建。DataFrame 与 RDD 在结构和优化能力上的区别如下图所示。
 
 <img src="./Apache Spark.assets/image-20250322145823260.png" alt="image-20250322145823260" style="zoom:50%;" />
 
@@ -415,26 +415,26 @@ DataFrame和dataset的关系
 
 在 Scala/Java API 中，`Dataset[T]` 可以使用类型化对象；`DataFrame` 是 `Dataset[Row]` 的别名，通常通过列名访问字段。Python API 的 DataFrame 同样基于 Row 结构，不提供 Scala/Java Dataset 的静态类型安全保证。
 
-### 1. 创建DataFrame的方式
+#### 1. 创建 DataFrame 的方式
 
 1. 通过自定义schema结构来创建一个DataFrame
 2. 通过实体类创建DataFrame
 3. 通过外部文件创建DataFrame
 4. 通过jdbc读取数据库的表（外部连接器）（MongoDB、es  https://spark.apache.org/third-party-projects.html）
 
-### 2. 对DataFrame做操作
+#### 2. 对 DataFrame 做操作
 
 可使用 DataFrame DSL（领域特定语言）或 SQL 操作数据。两种方式最终由 Spark SQL 构建执行计划；选择更便于表达和维护的方式即可。
 
 > 可使用 `explain()` 查看逻辑或物理计划，使用 Spark UI 观察实际运行情况；对大规模数据谨慎使用 `collect()`，因为它会将全部结果拉回 Driver。
 
-### 3. 输出
+#### 3. 输出
 
 1. 输出到控制台（`show` 用于预览；`collect` 会将结果传到 Driver，应仅用于结果集足够小的情况）
 2. 保存到文件
 3. 保存到外部连接（jdbc、hive）
 
-### 4. rdd和DataFrame相互转换
+#### 4. RDD 和 DataFrame 相互转换
 
 ```java
         RDD<Row> rdd = dataframeFromJdbc.rdd();
@@ -443,9 +443,9 @@ DataFrame和dataset的关系
 
 
 
-# Apache Spark Streaming
+## 七、 Spark Streaming
 
-## 一、实时流处理
+### 一、实时流处理
 
 实时流处理，就是一种 处理连续、动态数据流的 计算技术，核心特点如下：
 
@@ -463,7 +463,7 @@ DataFrame和dataset的关系
 - 社交媒体趋势分析
 - ....
 
-## 二、 Spark streaming介绍
+### 二、Spark Streaming 介绍
 
 > 本节讨论 Spark Streaming 的 DStream API（Spark 2.4 时代的微批处理接口）。这是旧式 API；新应用应优先评估 Structured Streaming，并确认所需数据源与 sink 的版本支持。
 
@@ -471,7 +471,7 @@ DataFrame和dataset的关系
 
 数据是源源不断产生的，我们通过SparkStreaming实时接收这种数据，并通过将数据进行切分的方式来处理。
 
-### 1. 流处理思想
+#### 1. 流处理思想
 
 一个无边界的数据流可按固定时间间隔切分为一批有边界的数据；在 DStream 中，每个批次对应一个 RDD。批次间隔会影响处理延迟和调度开销，需根据负载测试选择。
 
@@ -481,7 +481,7 @@ DataFrame和dataset的关系
 
 第二个参数是批次间隔，通常按秒配置；实际间隔应结合单批处理耗时和目标延迟设置，避免批次持续积压。
 
-### 2. DStream概念
+#### 2. DStream 概念
 
 SparkStreaming中的数据抽象叫做DStream，英文全称  Discretized Stream（离散流），它代表一个持续不断的数据流。
 
@@ -493,7 +493,7 @@ SparkStreaming中的数据抽象叫做DStream，英文全称  Discretized Stream
 
   <img src="./Apache Spark.assets/image-20250325213321364.png" alt="image-20250325213321364" style="zoom:80%;" />
 
-### 3. DStream的操作
+#### 3. DStream 的操作
 
 1. 无状态转换（跟RDD基本没有区别）
 
@@ -583,7 +583,7 @@ Accumulators, Broadcast Variables, and Checkpoints
 
 
 
-### 4. 数据的输出
+#### 4. 数据的输出
 
 1. println打印到控制台 （本地调试）
 
@@ -602,7 +602,7 @@ Accumulators, Broadcast Variables, and Checkpoints
 
    > 避免为每条记录创建数据库连接。Spark task 可能重试，因此 sink 写入逻辑应设计为幂等，或明确重复写入的处理方式。
 
-### 5. SQL 的方式处理DStream
+#### 5. 使用 SQL 处理 DStream
 
 工作原理：
 
@@ -615,7 +615,7 @@ Accumulators, Broadcast Variables, and Checkpoints
 // 注册一个 words 临时表  <---  dataframe(dataset)  <--- rdd + schema  <--- dStream
 ```
 
-## 六、spark项目
+## 八、 Spark 项目实践
 
 整体架构图
 
