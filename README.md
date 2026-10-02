@@ -1,12 +1,26 @@
 # Apache Spark 学习笔记
 
+> 本文是 Apache Spark 的入门与实践笔记，示例主要基于 Spark 2.4.3、Scala 2.11 和 Java 8。Spark 及其生态版本迭代较快；使用示例前，请先核对集群实际版本、语言版本和对应的官方文档。
+
+## 目录
+
+- [一、Spark 介绍](#一-spark-介绍)
+- [二、Spark 快速入门](#二-spark-快速入门)
+- [三、Spark Core 工程开发](#三-spark-core-工程开发)
+- [四、弹性分布式数据集 RDD](#四-弹性分布式数据集-rdd)
+- [五、Spark 程序运行](#五-spark-程序运行)
+- [六、Spark SQL](#六-spark-sql)
+- [七、Spark Streaming](#七-spark-streaming)
+- [八、Spark 项目实践](#八-spark-项目实践)
+- [附录](#附录)
+
 ## 一、 Spark 介绍
 
 > 官网：https://spark.apache.org/
 
-Spark 是一个支持 多语言 客户端开发 的 **基于内存的** 通用并行计算框架，目的是 让数据分析更加快速。跟它相对的是其它的传统⼤数据技术 Hadoop的MapReduce以及Flink流式实时计算引擎等。
+Apache Spark 是一个支持多语言 API 的分布式计算引擎，可用于批处理、SQL、流处理、机器学习和图计算。它既能利用内存加速重复计算，也会根据存储级别将数据写入磁盘；因此，“基于内存”不代表所有数据和中间结果都必须常驻内存。
 
-Spark包含了⼤数据领域常⻅的各种计算框架：⽐如Spark Core⽤于离线计算，Spark SQL⽤于SQL的交互式查询，Spark Streaming⽤于实时流式计算，Spark MLlib⽤于机器学习，Spark GraphX⽤于图计算等。
+Spark 提供多个面向不同任务的组件：Spark Core 提供基础执行能力，Spark SQL 处理结构化数据，Structured Streaming 提供流处理 API，MLlib 提供机器学习功能，GraphX 提供图计算 API。旧版 Spark Streaming 采用微批处理模型；新项目通常优先评估 Structured Streaming。
 
 ### 1. Spark的核心模块
 
@@ -14,40 +28,44 @@ Spark包含了⼤数据领域常⻅的各种计算框架：⽐如Spark Core⽤�
 
 - Spark core：Spark Core中提供了Spark最基础与最核⼼的功能，Spark 其他的功能如：Spark SQL、Spark Streaming、GraphX、MLlib 都是在 Spark Core的基础上进⾏扩展的。
 - Spark SQL：通过SQL的方式来操作Spark读取的数据
-- Spark Streaming：SparkStreaming 用于实时计算中（流处理），Spark streaming的处理思想是：只要我处理的批次间隔足够小，那么我就是实时处理（微批处理）
+- Spark Streaming：旧版 DStream API 以微批次方式处理流数据。它适合了解传统 Spark 流处理模型；新项目通常优先考虑 Structured Streaming。
 - Spark MLlib：机器学习相关的算法库。MLlib 不仅提供了模型评估、数据导⼊等额外的功能，还提供了⼀些更底层的机器学习原语。
 - Spark GraphX：面向图计算的一些框架和算法库
 
-### 2. Spark的特点
+### 2. Spark 的特点
 
 - 开发上手快：哪怕没有学习过MapReduce，只需要简单几行代码，就可以完成一个计算流程。（因为Spark封装了很多的方法以及算子）
-- Spark支持多语言开发：java、scala、python、SQL
-- 与hadoop可以无缝集成：Spark是一个通用的计算框架，本身是在hadoop之后发展出来的，spark+hadoop（hive）的组合是行业内大数据的主流组合。
-- 活跃度高：虽然已经诞生很多年，但是目前还是非常火热的一个计算框架，经过了很多公司的生产实践。
+- Spark 支持 Scala、Java、Python、R 和 SQL 等接口，具体功能支持因 API 和版本而异。
+- Spark 可以运行在 Standalone、YARN、Kubernetes 等集群管理器上，也可读取 HDFS 等 Hadoop 生态系统中的数据；它不要求必须依赖 Hadoop。
+- Spark 的 DAG 调度、缓存和 SQL 优化器等功能可提升多种工作负载的开发效率，但实际性能取决于数据规模、分区、资源和工作负载，不能仅依据框架名称判断。
 
 ### 3. Spark和MapReduce的对比
 
-MapReduce: 基于磁盘的批处理模型，分为 Map和 Reduce两阶段，中间数据需写入**磁盘**。这种设计导致大量 I/O 开销，尤其对迭代计算效率较低。
+Hadoop MapReduce 通常将 map 与 reduce 之间的中间结果写入磁盘。该模型简单且具有成熟的容错机制，但多轮迭代会产生较多 I/O。
 
-Spark: 采用 内存计算和弹性分布式数据集（RDD）模型，中间结果可缓存于**内存**中复用，减少磁盘交互。通过 DAG（有向无环图）调度优化任务执行顺序，减少 Shuffle 次数。
+Spark 使用 DAG 执行模型；RDD 或 DataFrame 在需要重复使用时可以缓存，以减少重复读取和计算。Spark 也会将 shuffle 数据写入磁盘，内存不足时还可能溢写，因此不能假设中间数据始终在内存中或 Spark 一定减少 shuffle。
 
-|    **场景**    |        **MapReduce**（慢、稳）         |    **Spark**（快、不是特别稳）     |
-| :------------: | :------------------------------------: | :--------------------------------: |
-| **离线批处理** | ✔️ 海量数据 ETL、日志分析（低成本存储） | ✔️ 中小规模数据批处理（高速度要求） |
-|  **迭代计算**  |       ❌ 效率低（需多次磁盘读写）       |  ✔️ 机器学习、图计算（如 GraphX）   |
-| **实时流处理** |                ❌ 不支持                |   ✔️ 微批处理（Spark Streaming）    |
-| **交互式查询** |                ❌ 延迟高                | ✔️ Spark SQL（低延迟 Ad-hoc 查询）  |
+| 场景 | Hadoop MapReduce | Apache Spark |
+| :-- | :-- | :-- |
+| 批处理 | 成熟的磁盘中间结果模型，适合批量作业 | DAG 执行；可缓存复用的数据，适用于多种批处理任务 |
+| 迭代计算 | 反复读写中间结果时开销较大 | 缓存中间数据可减少重复计算，需结合内存容量评估 |
+| 流处理 | 经典 MapReduce 面向有限数据集，不提供原生连续流 API | 可使用 Structured Streaming；Spark Streaming 是旧版微批 API |
+| SQL 分析 | 通常需借助其他 SQL 引擎 | Spark SQL 提供 DataFrame、SQL 和优化执行计划 |
 
-## 二、 Spark的快速入门
+> 两者定位和使用场景并不完全相同。选择时应同时考虑延迟要求、容错语义、运维成本、数据源和团队经验。
+
+## 二、 Spark 快速入门
 
 ### 1. spark 的安装
 
-如果在一个没有安装过Spark的系统中，需要安装Spark的话，可以遵循以下步骤
+如果在一个没有安装过 Spark 的系统中，需要安装 Spark，可以遵循以下步骤：
 
-需要注意 Spark 和 hadoop 有版本对应关系
+1. 根据目标集群选择 Spark、Scala、Java 和 Hadoop 兼容版本，并查看该版本的官方安装文档。
+2. 下载对应发行包，解压到目标目录。
+3. 配置 `JAVA_HOME`，并按运行模式配置必要的 Hadoop 环境变量和配置文件。
+4. 先使用本地模式验证安装，再连接集群运行。
 
-1. 下载安装包
-2. 上传并解压
+> Spark 发行包名称中的 Hadoop 版本通常表示其 Hadoop 客户端依赖版本；请以发行包说明和集群配置为准，不要只凭版本号推断兼容性。
 
 ### 2. 进入Spark的交互式终端
 
@@ -104,29 +122,33 @@ scala> val collect = containMe.collect()
 collect: Array[String] = Array(hello me)
 ```
 
-## 三、 Spark的工程开发
+## 三、 Spark Core 工程开发
 
 > 以 Spark Core 为例
 
-### 1. 创建maven工程
+### 1. 创建 Maven 工程
 
 ```xml
-<!-- 需要引入spark-core的依赖 -->
-		<dependency>
-      <groupId>org.apache.spark</groupId>
-      <artifactId>spark-core_2.11</artifactId>
-      <version>2.4.3</version>
-    </dependency>
+<!-- 示例版本适用于本文中的 Spark 2.4.3 / Scala 2.11 笔记 -->
+<dependency>
+  <groupId>org.apache.spark</groupId>
+  <artifactId>spark-core_2.11</artifactId>
+  <version>2.4.3</version>
+</dependency>
 ```
+
+部署到已安装 Spark 的集群时，通常将 Spark 依赖设为 `provided`，避免把集群已提供的 Spark 库重复打入应用包；本地运行则需确保运行时 classpath 中有相应依赖。
 
 ### 2. 创建sparkContext对象
 
 ```java
 SparkConf sparkConf = new SparkConf()
-                .setMaster("local")
-                .setAppName("my spark app");
+        .setMaster("local[*]")
+        .setAppName("my-spark-app");
 JavaSparkContext sc = new JavaSparkContext(sparkConf);
 ```
+
+`local[*]` 表示本地使用可用处理器核心数。提交到集群时，通常不在代码中固定 `master`，而由 `spark-submit --master` 指定；完成后应在 `finally` 中调用 `sc.stop()` 释放资源。
 
 ### 3. 获取数据
 
@@ -137,7 +159,7 @@ sc.textFile("hdfs://192.168.56.101:8020/path/to/file");
 
 ### 4. 通用计算
 
-transformation、action
+RDD 操作分为 transformation（转换）和 action（行动）。转换会构造新的 RDD，action 会触发计算；具体操作见下文。
 
 ### 5. 输出数据
 
@@ -160,13 +182,13 @@ Resilient Distributed Datasets
 
 ### 1. RDD 的核心特性
 
-- 分布式(Distributed)：RDD区别于传统的数据集（集合），最大的特点就是它是分布式的，也就是说，它的数据会被切割成多个分区（partition），每个分区可以分布在集群中的不同节点上进行运算。 这样做的好处是可以并行的大规模处理数据，第二个好处就是方便编程。
+- 分布式（Distributed）：RDD 是由多个分区组成的数据集，可由集群中的多个 task 并行处理；分区与物理节点并非一一对应。
 
 <img src="./Apache Spark.assets/image-20250320214805778.png" alt="image-20250320214805778" style="zoom:80%;" />
 
-- 弹性（Resilient）：容错性。如果某个rdd转换的过程中，部分分区数据丢失，spark可以通过rdd的关系（血统lineage）信息重新计算丢失的分区，而不需要重新计算整个数据集。
-- 不可变性（immutable）：RDD是不可变的，一旦被创建之后，就不能再修改了，所有的转换操作都会生成一个新的RDD，而不是修改原始的RDD。
-- 类型化（Typed）：RDD和集合一样，都是强类型的，可以存储任何类型的数据，但是一个RDD中的数据类型必须都相同。
+- 弹性（Resilient）：RDD 会记录转换关系（lineage）；分区丢失时，Spark 可根据血缘信息重新计算受影响的分区。
+- 不可变性（Immutable）：RDD 创建后不能原地修改；转换操作会生成新的 RDD。
+- 类型化（Typed）：RDD API 通过类型参数描述元素类型。Scala 编译器可检查类型；Java 泛型在运行时有类型擦除，仍需由应用保证元素类型一致。
 
 ### 2. RDD 的创建方式
 
@@ -175,47 +197,48 @@ Resilient Distributed Datasets
 
 ### 3.  RDD 的操作
 
-RDD支持两种操作方式：transformation和action
+RDD 支持两类操作：transformation（转换）和 action（行动）。
 
-RDD的转换操作是**惰性求值**的，意思是所有的转换操作，在代码执行过程中，不会立即执行，而是记录下操作逻辑，直到遇到了action才会触发计算。
+RDD 的转换操作是**惰性求值**的：调用转换时只构造计算关系，通常直到 action 执行时才真正计算。
 
-因为如果没有action，说明这个计算结果没有人使用，那么就不计算了。
+> 惰性求值允许 Spark 将多个转换组合成执行计划；若多个 action 重复使用同一中间结果，可考虑 `cache` / `persist`。
 
-1. Transformation（转换操作）
+#### Transformation（转换操作）
 
-| Transformation                                               | Meaning                                                      |
-| :----------------------------------------------------------- | :----------------------------------------------------------- |
-| **map**(*func*)                                              | Return a new distributed dataset formed by passing each element of the source through a function *func*. 返回由通过函数 func 对源数据集中的每个元素进行传递而形成的新分布式数据集。 |
-| **filter**(*func*)                                           | Return a new dataset formed by selecting those elements of the source on which *func* returns true. |
-| **flatMap**(*func*)                                          | Similar to map, but each input item can be mapped to 0 or more output items (so *func* should return a Seq rather than a single item). |
-| **mapPartitions**(*func*)                                    | Similar to map, but runs separately on each partition (block) of the RDD, so *func* must be of type Iterator<T> => Iterator<U> when running on an RDD of type T. |
-| **groupByKey**([*numPartitions*])                            | When called on a dataset of (K, V) pairs, returns a dataset of (K, Iterable<V>) pairs. **Note:** If you are grouping in order to perform an aggregation (such as a sum or average) over each key, using `reduceByKey` or `aggregateByKey` will yield much better performance. **Note:** By default, the level of parallelism in the output depends on the number of partitions of the parent RDD. You can pass an optional `numPartitions` argument to set a different number of tasks. |
-| **reduceByKey**(*func*, [*numPartitions*])                   | When called on a dataset of (K, V) pairs, returns a dataset of (K, V) pairs where the values for each key are aggregated using the given reduce function *func*, which must be of type (V,V) => V. Like in `groupByKey`, the number of reduce tasks is configurable through an optional second argument. |
-| **aggregateByKey**(*zeroValue*)(*seqOp*, *combOp*, [*numPartitions*]) | When called on a dataset of (K, V) pairs, returns a dataset of (K, U) pairs where the values for each key are aggregated using the given combine functions and a neutral "zero" value. Allows an aggregated value type that is different than the input value type, while avoiding unnecessary allocations. Like in `groupByKey`, the number of reduce tasks is configurable through an optional second argument. |
-| **repartition**(*numPartitions*)                             | Reshuffle the data in the RDD randomly to create either more or fewer partitions and balance it across them. This always shuffles all data over the network. |
-| **coalesce**(*numPartitions*)                                | Decrease the number of partitions in the RDD to numPartitions. Useful for running operations more efficiently after filtering down a large dataset. |
+| 操作 | 说明 |
+| :-- | :-- |
+| `map(func)` | 对每个元素应用函数，生成一个结果元素。 |
+| `filter(func)` | 保留使函数返回 `true` 的元素。 |
+| `flatMap(func)` | 对每个元素应用函数并展开结果；每个输入可对应零个或多个输出。 |
+| `mapPartitions(func)` | 对每个分区调用一次函数，输入和输出均为迭代器；可用于分区级初始化资源。 |
+| `groupByKey([numPartitions])` | 将键值对按 key 分组。若目的是聚合，通常优先使用 `reduceByKey` 或 `aggregateByKey`，避免传输所有原始值。 |
+| `reduceByKey(func, [numPartitions])` | 按 key 聚合，函数需满足可并行归并的结合性等要求；可先在 map 端合并部分结果。 |
+| `aggregateByKey(zeroValue)(seqOp, combOp, [numPartitions])` | 按 key 聚合，允许聚合结果类型不同于输入 value 类型。 |
+| `repartition(numPartitions)` | 通过 shuffle 调整分区数，可增加或减少分区并重新分布数据。 |
+| `coalesce(numPartitions)` | 减少分区数；默认不进行完整 shuffle，可能导致分区数据不均。需要重新均衡分区时可选择带 shuffle 的方式。 |
 
-2. action
+> `reduceByKey` 和 `aggregateByKey` 通常比先 `groupByKey` 再聚合更高效，因为它们可以先在 map 端合并部分结果。转换是否触发 shuffle 取决于具体算子和参数。
 
-   action会触发真正的计算，并将结果返回到 Driver或者保存到外部进行存储。
+#### Action（行动）
 
-| **reduce**(*func*)                                 | Aggregate the elements of the dataset using a function *func* (which takes two arguments and returns one). The function should be commutative and associative so that it can be computed correctly in parallel. |
-| -------------------------------------------------- | ------------------------------------------------------------ |
-| **collect**()                                      | Return all the elements of the dataset as an array at the driver program. This is usually useful after a filter or other operation that returns a sufficiently small subset of the data. |
-| **count**()                                        | Return the number of elements in the dataset.                |
-| **first**()                                        | Return the first element of the dataset (similar to take(1)). |
-| **take**(*n*)                                      | Return an array with the first *n* elements of the dataset.  |
-| **takeSample**(*withReplacement*, *num*, [*seed*]) | Return an array with a random sample of *num* elements of the dataset, with or without replacement, optionally pre-specifying a random number generator seed. |
-| **takeOrdered**(*n*, *[ordering]*)                 | Return the first *n* elements of the RDD using either their natural order or a custom comparator. |
-| **saveAsTextFile**(*path*)                         | Write the elements of the dataset as a text file (or set of text files) in a given directory in the local filesystem, HDFS or any other Hadoop-supported file system. Spark will call toString on each element to convert it to a line of text in the file. |
-| **saveAsSequenceFile**(*path*) (Java and Scala)    | Write the elements of the dataset as a Hadoop SequenceFile in a given path in the local filesystem, HDFS or any other Hadoop-supported file system. This is available on RDDs of key-value pairs that implement Hadoop's Writable interface. In Scala, it is also available on types that are implicitly convertible to Writable (Spark includes conversions for basic types like Int, Double, String, etc). |
-| **saveAsObjectFile**(*path*) (Java and Scala)      | Write the elements of the dataset in a simple format using Java serialization, which can then be loaded using `SparkContext.objectFile()`. |
-| **countByKey**()                                   | Only available on RDDs of type (K, V). Returns a hashmap of (K, Int) pairs with the count of each key. |
-| **foreach**(*func*)                                | Run a function *func* on each element of the dataset. This is usually done for side effects such as updating an [Accumulator](https://archive.apache.org/dist/spark/docs/2.4.3/rdd-programming-guide.html#accumulators) or interacting with external storage systems. **Note**: modifying variables other than Accumulators outside of the `foreach()` may result in undefined behavior. See [Understanding closures ](https://archive.apache.org/dist/spark/docs/2.4.3/rdd-programming-guide.html#understanding-closures-a-nameclosureslinka)for more details. |
+Action 会触发计算，并将结果返回 Driver 或写入外部存储。返回 Driver 的操作只适用于结果足够小的场景。
+
+| 操作 | 说明 |
+| :-- | :-- |
+| `reduce(func)` | 使用满足结合性和交换性的函数归并元素，返回一个结果。 |
+| `collect()` | 将全部元素拉回 Driver；仅用于结果集足够小的情况。 |
+| `count()` | 返回元素总数。 |
+| `first()` / `take(n)` | 返回首个元素或前 `n` 个元素。 |
+| `takeSample(withReplacement, num, [seed])` | 返回指定数量的随机样本，可选择是否放回及随机种子。 |
+| `takeOrdered(n, [ordering])` | 按自然顺序或指定顺序返回前 `n` 个元素。 |
+| `saveAsTextFile(path)` | 将元素写为文本文件，路径可以位于本地文件系统、HDFS 等支持的文件系统。 |
+| `saveAsSequenceFile(path)` / `saveAsObjectFile(path)` | 以 SequenceFile 或 Java 序列化对象文件格式保存 RDD（Java/Scala API）。 |
+| `countByKey()` | 对键值对 RDD 按 key 计数，并将结果 map 返回 Driver；需注意结果大小。 |
+| `foreach(func)` | 在 executor 上对各元素执行函数。外部副作用可能因任务重试而重复；闭包外变量修改不适合作为可靠结果。 |
 
 ### 4. 依赖关系
 
-宽窄依赖 --> stage划分
+宽窄依赖决定 stage 划分边界。
 
 - 宽依赖（Wide Dependency）
 
@@ -227,86 +250,56 @@ RDD的转换操作是**惰性求值**的，意思是所有的转换操作，在�
 
   
 
-  - 窄依赖（Narrow Dependency）
+- 窄依赖（Narrow Dependency）
 
-    每个父RDD的分区最多被一个子RDD的分区使用，这种就叫做窄依赖。
+  每个父 RDD 分区最多被一个子 RDD 分区使用，这种关系称为窄依赖。
 
-    通常会产生窄依赖的算子包含：  `map`、`filter`、`mapPartition`、`sample`、`union`
+  常见算子包括：`map`、`filter`、`mapPartitions`、`sample`、`union`。
 
-    <img src="./Apache Spark.assets/image-20250322101650945.png" alt="image-20250322101650945" style="zoom:80%;" />
+  <img src="./Apache Spark.assets/image-20250322101650945.png" alt="窄依赖示意图" style="zoom:80%;" />
 
-  宽依赖必然会有shuffle过程，shuffle的本质是数据的跨节点计算，因此在划分stage的时候，遇到了shuffle（宽依赖）就会切割stage（切割血缘）
+宽依赖通常需要 shuffle；调度器会在 shuffle 边界切分 stage。shuffle 涉及跨分区数据传输，可能产生网络和磁盘 I/O。
 
 ### 5. 分区和并行度
 
-在spark中，所谓的分区（partition）就是指的是数据分布的物理单元。分区的数量会影响任务的数量，分区越多，task越多
+在 Spark 中，分区（partition）是 RDD 或 DataFrame 的逻辑数据划分，也是 stage 中 task 的基本调度单位。一个 task 通常处理一个分区；分区数会影响 task 数量，但分区不一定与 HDFS 文件块或物理节点一一对应。
 
-并行度（parallelism）是任务执行的并发能力，并行度指的是同一时间内，有多少个task参与计算，并行度越高，通常任务的性能越好。
+并行度描述可同时执行的 task 数量，受分区数、可用 executor 核心数和资源调度等因素影响。提高并行度并不一定提升性能，还要考虑数据倾斜、task 开销和集群资源。
 
 - 分区
-  - 读取文件时，分区数按照文件的快大小分隔分区（hdfs）
-  - 并行化集合时：由参数numSlices指定分区数（不指定的情况下默认为CPU核心数）
-  - shuffle后：  `spark.sql.shuffle.partitions` 默认200，可以在spark sql客户端中通过set来设置
-  - 自定义分区器：按照 numPartitions来控制分区数
+  - 文件读取分区数受文件系统、文件大小、输入格式和读取参数等影响。
+  - 并行化集合时可指定分区数；默认值与 Spark 配置及运行环境有关。
+  - RDD 和 Spark SQL 的 shuffle 分区使用不同配置。本文 Spark 2.4 中，SQL 默认 shuffle 分区配置为 `spark.sql.shuffle.partitions`（默认值 200）；RDD 算子的分区数由算子参数、分区器和相关配置决定。
+  - 可通过 `repartition`、`coalesce` 或自定义分区器调整分区，但应在观察任务运行和数据分布后决定。
 
-- 并行度
-  - 并行度取决于 executor数量（人） * 每个executor的CPU核心数（每个人同一时间能做几件事情）
-
-合理的调整分区数大小和并行度大小，可以达到优化任务执行性能的效果
-
-分区数不是越多越好，太多的话每个task操作的数据量很小，并且task需要多轮才能执行完成，太少的话，部分executor没活干（无法充分利用集群资源）
-
-一般情况下，我们尽量让分区数接近spark集群运行时的可用核心数，避免资源限制或任务过载。
-
-通常分区数为总并行度的1~4倍较为合理，当然也要考虑每个分区处理的数据量。
-
-
-
-
-
-cache或者persist接口只有在遇到了action之后，才会触发真正的执行。
+> 调优时可结合 Spark UI 查看 stage、task 数量、数据倾斜和 shuffle 读写量。不存在适用于所有集群的固定分区倍数。
 
 ### 6. 持久化和缓存
 
-持久化：就是把数据存储到一个地方（磁盘），需要用的时候再拿出来
+缓存和持久化（`cache` / `persist`）用于在同一个 Spark 应用内复用计算结果，不等同于长期数据存储。Spark 可以按存储级别保留分区在内存或磁盘中；未能保留的分区可能需要重新计算。应用结束后，这些缓存数据会被清理。
 
-缓存：就是把数据存储到一个地方（内存），需要用的时候再拿出来
-
-通常持久化就是保留到永久存储介质，通常为磁盘；缓存就是保存到内存中。但是在spark中，不管是内存还是磁盘，在任务结束的时候都会销毁，所以spark中的持久化和缓存其实是相同的概念，只不过cache是特殊的persist
-
-常用的是  MEMORY_ONLY（消耗内存多，但是块）、MEMORY_AND_DISK
+常见存储级别包括 `MEMORY_ONLY` 和 `MEMORY_AND_DISK`。选择时需权衡内存占用、序列化开销、磁盘 I/O 与重算成本。
 
 <img src="./Apache Spark.assets/image-20250322115136723.png" alt="image-20250322115136723" style="zoom:80%;" />
 
-cache本质就是 StorageLevel.MEMORY_ONLY 的persist
+在 Spark 2.4 的 Scala/Java RDD API 中，`cache()` 等价于 `persist(StorageLevel.MEMORY_ONLY)`；其他语言 API 的默认存储级别可能不同。
 
-| torage Level                           | Meaning                                                      |
-| -------------------------------------- | ------------------------------------------------------------ |
-| MEMORY_ONLY                            | Store RDD as deserialized Java objects in the JVM. If the RDD does not fit in memory, some partitions will not be cached and will be recomputed on the fly each time they're needed. This is the default level. |
-| MEMORY_AND_DISK                        | Store RDD as deserialized Java objects in the JVM. If the RDD does not fit in memory, store the partitions that don't fit on disk, and read them from there when they're needed. |
-| MEMORY_ONLY_SER (Java and Scala)       | Store RDD as *serialized* Java objects (one byte array per partition). This is generally more space-efficient than deserialized objects, especially when using a [fast serializer](https://spark.apache.org/docs/latest/tuning.html), but more CPU-intensive to read. |
-| MEMORY_AND_DISK_SER (Java and Scala)   | Similar to MEMORY_ONLY_SER, but spill partitions that don't fit in memory to disk instead of recomputing them on the fly each time they're needed. |
-| DISK_ONLY                              | Store the RDD partitions only on disk.                       |
-| MEMORY_ONLY_2, MEMORY_AND_DISK_2, etc. | Same as the levels above, but replicate each partition on two cluster nodes. |
-| OFF_HEAP (experimental)                | Similar to MEMORY_ONLY_SER, but store the data in [off-heap memory](https://spark.apache.org/docs/latest/configuration.html#memory-management). This requires off-heap memory to be enabled. |
+| 存储级别 | 说明 |
+| :-- | :-- |
+| `MEMORY_ONLY` | 以反序列化对象存于内存；内存不足的分区不会缓存，需要时重新计算。 |
+| `MEMORY_AND_DISK` | 优先存于内存，内存不足的分区写入磁盘。 |
+| `MEMORY_ONLY_SER` / `MEMORY_AND_DISK_SER` | 以序列化形式存储，可节省内存但增加序列化与反序列化开销。 |
+| `DISK_ONLY` | 分区仅存于磁盘。 |
+| 带 `_2` 的级别 | 将每个分区复制到两个节点，增加存储开销以提升副本冗余。 |
+| `OFF_HEAP` | 在启用并配置堆外内存后使用堆外存储。 |
 
-需要注意，这里的持久化不是真的持久化，这个持久化只在spark application的生命周期中有效，一旦application结束，persist也会被清理。
+### 7. Checkpoint
 
-### 7. checkpoint
+RDD checkpoint 会将计算结果写入可靠存储（例如 HDFS），并截断 RDD 的 lineage。使用前需通过 `SparkContext.setCheckpointDir(path)` 设置目录，再对目标 RDD 调用 `checkpoint()`；检查点通常在后续 action 执行时写入。它会产生额外的计算和存储开销，应在 lineage 过长或恢复成本较高时使用。
 
-> 很少用
+Structured Streaming 的检查点还会保存查询进度和状态，以支持故障恢复；它与 RDD checkpoint 的用途和格式不同。检查点目录应使用可靠存储，并遵循具体 API 的恢复要求。
 
-设置检查点（checkpoint）方式，本质上是将RDD写入磁盘进行存储。当RDD在进行宽依赖运算时，只需要在中间阶段设置一个检查点进行容错，即通过 Spark中的sparkContext对象调用setCheckpoint()方法，设置一个容错文件系统目录(如 HDFS)作为检查点checkpoint，将checkpoint 的数据写入之前设置的容错文件系统中进行高可用的持久化存储， 若是后面有节点出现宕机导致分区数据丢失,则可以从作为检查点的RDD开始重新计算，不需要进行从头到尾的计 算，这样就会减少开销。
-
-简单理解，**Checkpoint** 就是一种将 RDD 或 DataFrame/Dataset 持久化到可靠存储（如 HDFS 或本地文件系统）的机制，用于切断 RDD 的血缘关系（Lineage），避免任务失败时从头重新计算。
-
-checkpoint还有一个作用，可以用于中断任务后，重启任务加载上个任务的数据
-
-
-
-通常的使用场景 是在 sparkStreaming中。
-
-## 五、spark 程序运行
+## 五、 Spark 程序运行
 
 通常在开发的时候，会设置 master为 local，这样做是为了快速的在本地运行spark程序进行验证。
 
@@ -314,8 +307,9 @@ checkpoint还有一个作用，可以用于中断任务后，重启任务加载�
 
 ### 1. 打包程序
 
-1. 将 `setMaster("local") `注释掉，因为我们要提交到集群中运行
-2. 通过maven进行打包  `mvn clean pacakge `
+1. 本地测试使用的 `setMaster("local[*]")` 不应覆盖集群提交参数；建议将 master 通过 `spark-submit` 指定。
+2. 通过 Maven 打包：`mvn clean package`。
+3. 明确依赖的打包策略：集群已提供的 Spark 依赖通常设为 `provided`，业务依赖则按发行包和集群要求打包或提供。
 
 ### 2. 提交任务到yarn
 
@@ -338,17 +332,16 @@ spark-submit --class org.example.App2 --master yarn --deploy-mode client --execu
 | --------------- | ---------------------- | ------------------------------------------------------------ |
 | class           | com.example.WordCount2 | 作业的主类。                                                 |
 | master          | yarn                   | 在企业中多使用 Yarn 模式。                                   |
-|                 | yarn-client            | 等同于 `--master yarn --deploy-mode client`此时不需要指定 `deploy-mode`。 |
-|                 | yarn-cluster           | 等同于 `--master yarn --deploy-mode cluster`此时不需要指定 `deploy-mode`。 |
-| deploy-mode     | client                 | client 模式表示作业的 AM 会放在 Master 节点上运行（提交作业的节点本地jvm中）。如果设置此参数，需要指定 Master 为 yarn。 |
-|                 | cluster                | cluster 模式表示 AM 会随机的在 Worker 节点中的任意一台上启动运行。如果设置此参数，需要指定 Master 为 yarn。 |
-| driver-memory   | 4g                     | Driver 使用的内存，不可超过单机的总内存。                    |
+| deploy-mode     | client                 | Driver 在提交端进程中运行；提交端需在应用运行期间保持可用。 |
+|                 | cluster                | Driver 在集群中运行，提交客户端退出后应用仍可继续运行。 |
+| driver-memory   | 4g                     | Driver 可用内存上限之一；实际资源还受集群管理器和部署配置约束。 |
 | num-executors   | 2                      | 创建 Executor 的个数。                                       |
-| executor-memory | 2g                     | 各个 Executor 使用的最大内存，不可以超过单机的最大可使用内存。 |
+| executor-memory | 2g                     | 各个 Executor 请求的堆内存；容器总内存还可能包括额外开销。 |
 | executor-cores  | 2                      | 各个 Executor 使用的并发线程数目，即每个 Executor 最大可并发执行的 Task 数目。 |
 
 <img src="./Apache Spark.assets/image-20250322110355871.png" alt="image-20250322110355871" style="zoom:80%;" />
 
+> Spark 2.4 仍可见 `yarn-client` / `yarn-cluster` 等旧写法；新命令建议显式使用 `--master yarn` 和 `--deploy-mode client|cluster`。部署模式、资源参数及可用选项以当前 Spark 版本和集群策略为准。
 
 
 涉及的一些概念：
@@ -360,43 +353,25 @@ spark-submit --class org.example.App2 --master yarn --deploy-mode client --execu
 
 完整运行过程说明如下:
 
-**1.**用户提交任务 用户通过spark-submit提交任务，首先会启动一个Driver进程，其实就是我们编写的Spark程序的main()函数，同时会初始化SparkContext，进而初始化DAGScheduler和TaskScheduler等Spark内部关键组件;
+1. `spark-submit` 启动应用 Driver。Driver 执行应用入口代码并创建 `SparkContext`，初始化调度器等组件。
+2. 集群管理器根据部署模式和资源配置分配 Executor 资源。YARN、Standalone 和 Kubernetes 的资源申请与进程启动流程并不相同。
+3. Executor 启动后向 Driver 注册并等待任务。
+4. action 触发 Job；DAGScheduler 根据依赖关系划分 stages，TaskScheduler 将每个 stage 的 tasks 分发给 Executor。
+5. Executor 在 task 线程中处理分区数据，并向 Driver 汇报执行状态和结果。
 
-**2.Driver**申请资源
-
-Driver会向master申请资源，准备去执行Spark算子操作逻辑;
-
-**3.Master**下发任务
-
-Master收到Driver提交的作业请求之后，向Worker节点指派任务，其实就是让其启动对应的Executor进程;
-
-**4.Worker**启动**Executor**进程
-
-Worker节点收到Master节点发来的启动Executor进程任务，就启动对应的Executor进程，同时向Master汇 报启动成功，处于可以接收任务的状态;
-
-**5.Executor**向**Driver**反向注册
-
-当Executor进程启动成功后，就向Driver进程反向注册，以此来告诉Driver，谁可以接收任务，执行Spark作 业;Driver接收到注册之后，就知道了向谁发送Spark作业，这样在Spark集群中就有一组独立的executor进程为该driver服务;
-
-**6.Driver**进行**Stage**划分和**Task**分发
-
-SparkContext重要组件运行—DAGScheduler和TaskScheduler，DAGScheduler根据宽依赖将作业划分为若干stage，并为每一个阶段组装一批Task组成TaskSet(TaskSet里面就包含了序列化之后的我们编写的Spark transformation);然后将TaskSet交给TaskScheduler，由其将任务分发给对应的Executor;
-
-**7.Executor**运行**Task** Executor进程接收到Driver发送过来的Task，进行反序列化，然后将这些Task放到本地线程池中，调度我们
-
-的作业的执行。
+> Application、Job、Stage 和 Task 是不同层次的执行概念：一个应用可包含多个 Job；Job 通常拆分为多个 Stage；每个 Stage 包含若干 Task，Task 数量通常与该 Stage 的分区数对应。
 
 
 
 
 
-# Apache Spark SQL
+## 六、 Spark SQL
 
-## 一、 SparkSQL 介绍
+### 一、Spark SQL 介绍
 
-SparkSQL 是Spark 用来处理**结构化数据**的一个模块，可以通过SQL的方式访问和处理数据。它提供了一个叫做DataFrame的编程抽象结构数据模型，可以简单理解为 DataFrame = rdd + schema信息。SparkSQL底层有一个SQL的查询引擎，帮助用户将SQL翻译成底层的RDD编程模型，从而执行任务。
+Spark SQL 是 Spark 用来处理**结构化数据**的模块，可通过 SQL 和 DataFrame API 访问数据。DataFrame 带有列名和类型等 schema 信息；Spark SQL 通过 Catalyst 优化器和执行引擎生成执行计划。DataFrame 不宜简单等同于“RDD 加 schema”，因为两者执行抽象、优化能力和 API 都不同。
 
-SparkSQL 前身是shark，但是shark过度依赖hive，导致很多方面无法进一步优化。
+Spark SQL 的前身项目是 Shark。当前 Spark SQL 可连接多种数据源，也可与 Hive metastore 集成；数据格式、catalog 和连接器支持应根据 Spark 版本确认。
 
 SparkSQL的特点：
 
@@ -406,13 +381,13 @@ SparkSQL的特点：
 
 2. 无缝集成RDD
 
-   SparkSQL虽然编程对象是DataFrame，但是他能够很轻松的转换为RDD。RDD也可以通过附加schema来转换为DataFrame。
+   Spark SQL 可以与 RDD API 互操作，但转换会影响优化边界；需要利用 DataFrame/SQL 的优化能力时，尽量在该抽象中完成可表达的操作。
 
 
 
-## 二、 SparkSQL 编程模型
+### 二、Spark SQL 编程模型
 
-Spark SQL使用的数据抽象并非是RDD,而是DataFrame。在Spark1.3.0版本之前，DataFrame被称为 SchemaRDD。DataFrame使Spark具备了处理大規模结构化数据的能力。在Spark中，DataFrame是一种以RDD 为基础的分布式数据集，因此DataFrame可以完成RDD的绝大多数功能，在开发使用时，也可以调用方法将RDD 和DataFrame进行相互转换。DataFrame的结构类似于传统数据库的二维表格，并且可以从很多数据源中创建， 如结构化文件、外部数据库、Hive表等数据源。DataFrame与RDD在结构上的区别如下所示。
+Spark SQL 使用的主要数据抽象是 DataFrame/Dataset。早期版本曾使用 SchemaRDD 名称。DataFrame 是分布式的、有 schema 的数据抽象，可由结构化文件、外部数据库、Hive 表等数据源创建。DataFrame 与 RDD 在结构和优化能力上的区别如下图所示。
 
 <img src="./Apache Spark.assets/image-20250322145823260.png" alt="image-20250322145823260" style="zoom:50%;" />
 
@@ -420,7 +395,7 @@ RDD是分布式的Java对象的集合，如上图所示的RDD[Person]数据集�
 
 
 
-SparkSQL 程序的入口不再是 `SparkContext`，而是`SparkSession`，SparkSession是在sparkcontext的基础上进一步封装，换句话说，sparkSession持有sparkContext并且还有其他功能。 
+Spark SQL 程序通常通过 `SparkSession` 访问 SQL 功能。`SparkSession` 提供 DataFrame、SQL、catalog 等接口，并可通过 `spark.sparkContext` 获取底层 `SparkContext`。
 
 
 
@@ -432,28 +407,28 @@ DataFrame和dataset的关系
 
 可以认为，Spark中的DataFrame就是特殊的dataset（类型为Row的dataset）。
 
-Dataset是类型安全的（或者说Dataset是强类型的），而DataFrame则是早期只有类型为Row的一种数据结构，后续被Dataset取代。
+在 Scala/Java API 中，`Dataset[T]` 可以使用类型化对象；`DataFrame` 是 `Dataset[Row]` 的别名，通常通过列名访问字段。Python API 的 DataFrame 同样基于 Row 结构，不提供 Scala/Java Dataset 的静态类型安全保证。
 
-### 1. 创建DataFrame的方式
+#### 1. 创建 DataFrame 的方式
 
 1. 通过自定义schema结构来创建一个DataFrame
 2. 通过实体类创建DataFrame
 3. 通过外部文件创建DataFrame
 4. 通过jdbc读取数据库的表（外部连接器）（MongoDB、es  https://spark.apache.org/third-party-projects.html）
 
-### 2. 对DataFrame做操作
+#### 2. 对 DataFrame 做操作
 
-有两种方式可以对DataFrame进行操作，一种叫 DSL（domain spec language），一种叫SQL。通常来说，我们习惯直接使用SQL的方式进行操作，DSL比较少用。
+可使用 DataFrame DSL（领域特定语言）或 SQL 操作数据。两种方式最终由 Spark SQL 构建执行计划；选择更便于表达和维护的方式即可。
 
-具体用法参考代码。
+> 可使用 `explain()` 查看逻辑或物理计划，使用 Spark UI 观察实际运行情况；对大规模数据谨慎使用 `collect()`，因为它会将全部结果拉回 Driver。
 
-### 3. 输出
+#### 3. 输出
 
-1. 输出到控制台（show、collect+print）
+1. 输出到控制台（`show` 用于预览；`collect` 会将结果传到 Driver，应仅用于结果集足够小的情况）
 2. 保存到文件
 3. 保存到外部连接（jdbc、hive）
 
-### 4. rdd和DataFrame相互转换
+#### 4. RDD 和 DataFrame 相互转换
 
 ```java
         RDD<Row> rdd = dataframeFromJdbc.rdd();
@@ -462,15 +437,17 @@ Dataset是类型安全的（或者说Dataset是强类型的），而DataFrame则
 
 
 
-# Apache Spark Streaming
+## 七、 Spark Streaming
 
-## 一、实时流处理
+### 一、实时流处理
 
 实时流处理，就是一种 处理连续、动态数据流的 计算技术，核心特点如下：
 
 - 低延迟：数据输入后能够快速相应和处理
 - 持续处理：能够连续处理**无边界**的数据流
 - 动态计算：实时对数据进行分析、聚合和转换等
+
+> 流处理系统通常还需明确事件时间或处理时间、乱序数据处理、状态管理、容错与端到端交付语义。“实时”延迟取决于系统设计和资源配置，并不意味着零延迟。
 
 应用场景
 
@@ -480,23 +457,25 @@ Dataset是类型安全的（或者说Dataset是强类型的），而DataFrame则
 - 社交媒体趋势分析
 - ....
 
-## 二、 Spark streaming介绍
+### 二、Spark Streaming 介绍
+
+> 本节讨论 Spark Streaming 的 DStream API（Spark 2.4 时代的微批处理接口）。这是旧式 API；新应用应优先评估 Structured Streaming，并确认所需数据源与 sink 的版本支持。
 
 <img src="./Apache Spark.assets/image-20250325211945822.png" alt="image-20250325211945822" style="zoom:80%;" />
 
 数据是源源不断产生的，我们通过SparkStreaming实时接收这种数据，并通过将数据进行切分的方式来处理。
 
-### 1. 流处理思想
+#### 1. 流处理思想
 
-一个无边界的数据流，只要我们按照时间片段（一般是比较短的时间片段）进行切割，就可以变成无数多个 有边界的数据，这个有边界的数据在Spark中就是 RDD
+一个无边界的数据流可按固定时间间隔切分为一批有边界的数据；在 DStream 中，每个批次对应一个 RDD。批次间隔会影响处理延迟和调度开销，需根据负载测试选择。
 
 <img src="./Apache Spark.assets/image-20250325213017249.png" alt="image-20250325213017249" style="zoom:80%;" />
 
 `JavaStreamingContext streamingContext = new JavaStreamingContext(sc, Durations.seconds(5));`
 
-这里的第二个参数，就是控制时间片段的大小，通常是按照秒级切分
+第二个参数是批次间隔，通常按秒配置；实际间隔应结合单批处理耗时和目标延迟设置，避免批次持续积压。
 
-### 2. DStream概念
+#### 2. DStream 概念
 
 SparkStreaming中的数据抽象叫做DStream，英文全称  Discretized Stream（离散流），它代表一个持续不断的数据流。
 
@@ -508,7 +487,7 @@ SparkStreaming中的数据抽象叫做DStream，英文全称  Discretized Stream
 
   <img src="./Apache Spark.assets/image-20250325213321364.png" alt="image-20250325213321364" style="zoom:80%;" />
 
-### 3. DStream的操作
+#### 3. DStream 的操作
 
 1. 无状态转换（跟RDD基本没有区别）
 
@@ -566,7 +545,7 @@ SparkStreaming中的数据抽象叫做DStream，英文全称  Discretized Stream
   - 可以控制状态类型，不一定要跟数据的value类型一致
   - 实现上比较复杂，适用于大规模的状态管理（实验性接口）
 
-如果即想使用状态，又怕状态无限膨胀，最佳实践是使用额外存储作为状态后端。
+若状态随 key 数量持续增长，应定义状态过期与清理策略，并评估状态规模和恢复语义。外部存储可以用于业务状态管理，但会引入额外的读写和一致性设计，不应简单视作 Spark 状态管理的替代品。
 
 
 
@@ -585,24 +564,20 @@ SparkStreaming中的数据抽象叫做DStream，英文全称  Discretized Stream
 Accumulators, Broadcast Variables, and Checkpoints
 
 - 累加器（executor只写）
-  - executor只能对累加器做累加的动作
-  - 多个executor在处理数据的时候，都对累加器做了操作，但是不会产生安全问题，因为spark帮我们保证了（一致性协议）
-  - 一般用于统计
+  - 适合在 executor 端进行任务级计数和调试统计，driver 端读取最终值。
+  - 任务重试或 stage 重算可能影响累加器的更新次数；不要用它实现精确业务账目或依赖副作用的更新。
 - 广播变量（executor只读）
   - 广播变量由driver创建并广播，executor只能读取值，不能修改值
-  - 广播变量广播之后，会在每个executor中保存一份
-  - 广播变量发送给executor只会发送一次，不会因为每个executor由多个task而发送多次
+  - 广播变量可减少多个 task 重复传送小型只读数据的开销；是否广播应结合数据大小和集群内存评估。
+  - 生命周期由应用管理，使用完可调用 `unpersist()` 或 `destroy()` 释放资源。
 
-- 从checkpoint重启spark streaming程序
-  - 累加状态被重置了
-    - 依赖外部存储（redis、hbase），重启的时候从外部初始化初始值
-  - 假设streaming挂了，但是socket还在不断的发数据
-    挂了到重启的这段时间的数据就会丢失
-    - 回放数据（socket数据源不支持） --> 使用支持回放的数据源，比如kafka，通过offset机制来保证 
+- 从 checkpoint 恢复 Spark Streaming 程序时，恢复能力取决于 checkpoint 内容、输入源和输出端的语义。
+  - Socket 等不支持 offset 或重放的数据源无法保证故障期间的数据完整性；需要可靠恢复时，应选择支持重放的数据源。
+  - 外部状态需单独定义持久化及恢复策略；checkpoint 不会自动保存任意外部系统中的业务状态。
 
 
 
-### 4. 数据的输出
+#### 4. 数据的输出
 
 1. println打印到控制台 （本地调试）
 
@@ -612,15 +587,16 @@ Accumulators, Broadcast Variables, and Checkpoints
 
    ```java
    resultDstream.foreachRDD(rdd -> {
-     // 获取数据库连接（连接池中get connection
-     // insert or update 到数据库
-     rdd.foreach(record ->{
-     	saveToDb()
+     rdd.foreachPartition(records -> {
+       // 每个分区复用连接，并批量写入；妥善处理连接关闭、重试和幂等性。
+       savePartitionToDb(records);
      })
    });
    ```
 
-### 5. SQL 的方式处理DStream
+   > 避免为每条记录创建数据库连接。Spark task 可能重试，因此 sink 写入逻辑应设计为幂等，或明确重复写入的处理方式。
+
+#### 5. 使用 SQL 处理 DStream
 
 工作原理：
 
@@ -633,7 +609,7 @@ Accumulators, Broadcast Variables, and Checkpoints
 // 注册一个 words 临时表  <---  dataframe(dataset)  <--- rdd + schema  <--- dStream
 ```
 
-## 六、spark项目
+## 八、 Spark 项目实践
 
 整体架构图
 
@@ -641,17 +617,17 @@ Accumulators, Broadcast Variables, and Checkpoints
 
 ### 1. 数据集介绍
 
-来源：开源数据集 https://files.grouplens.org/datasets/movielens/ml-25m.zip
+来源：[MovieLens 25M 数据集](https://files.grouplens.org/datasets/movielens/ml-25m.zip)。使用时请遵守数据集的许可和使用条款。
 
 - movies.csv
 
-  该文件是电影数据，对应为维读表，包含62423多部电影，movies.csv 的数据格式为：`movieId,title,genres`
+  该文件是电影维度数据，包含 62,423 部电影。格式为：`movieId,title,genres`。
 
   `1,Toy Story (1995),Adventure|Animation|Children|Comedy|Fantasy`
 
 - ratings.csv
 
-  电影的评分数据，对应为事实表数据，包好25000095评分数据，ratings.csv 的数据格式为： `userId,movieId,rating,timestamp`
+  该文件是电影评分事实数据，包含 25,000,095 条评分。格式为：`userId,movieId,rating,timestamp`。
 
   `1,307,5.0,1147868828`
 
@@ -666,11 +642,11 @@ Accumulators, Broadcast Variables, and Checkpoints
 1. 搭建项目
 2. 读取数据源（hdfs上面）
 3. 分别实现三个需求
-4. 讲结果保存到外部（MySQL）
+4. 将结果保存到外部存储（例如 MySQL）
 
 ### 4. 打包上线
 
-1. scala程序需要添加scala的打包插件
+1. Scala 程序需要配置 Scala Maven 插件。
 
    ```xml
            <sourceDirectory>src/main/scala</sourceDirectory>
@@ -689,7 +665,7 @@ Accumulators, Broadcast Variables, and Checkpoints
                        </execution>
                    </executions>
                </plugin>
-               <!-- 将依赖一起打进jar包的插件，另一种常用的插件是shaded -->
+               <!-- 可用 Assembly 或 Shade 插件打包业务依赖；避免重复打入集群已提供的 Spark/Hadoop 依赖。 -->
                <plugin>
                    <artifactId>maven-assembly-plugin</artifactId>
                    <configuration>
@@ -714,17 +690,17 @@ Accumulators, Broadcast Variables, and Checkpoints
 
    
 
-2. 可以通过指定profile的方式控制哪些包需要打进 jar 包中。（spark的相关包不需要引入，因为集群已经自带了）
+2. 可以通过 Maven profile 控制哪些依赖需要打入应用包中。只有在目标集群确认已提供兼容版本时，才将 Spark/Hadoop 依赖设为 `provided`。
 
 <img src="./Apache Spark.assets/image-20250330115734974.png" alt="image-20250330115734974" style="zoom:80%;" />
 
-3. 提交到集群，命令如下：（128 cores -->256线程）
+3. 提交到集群。以下命令仅为参数示例，executor 数、核数和内存需要结合队列配额与作业负载调整：
 
    ```bash
    spark-submit --class com.example.spark.ClusterApp --master yarn --deploy-mode cluster --executor-memory 512M --num-executors 1 --executor-cores 2 spark_project-1.0-SNAPSHOT-jar-with-dependencies.jar hdfs://hadoop:9000/data/movies.csv hdfs://hadoop:9000/data/ratings_all.csv
    ```
 
-   如果发现有问题，想在生产测试一下sql的结果，可以使用 --deploy-mode client ，会将一些driver的日志输出到控制台。
+   `--deploy-mode client` 会让 Driver 在提交客户端所在进程运行，便于查看 Driver 日志；不要将交互式调试配置直接当作生产配置。
 
 4. 后续，一般是会通过调度系统定时调度（比如airflow等）
 
@@ -737,41 +713,43 @@ vim spark-defaults.conf
 spark.eventLog.enabled           true
 spark.eventLog.dir               hdfs://hadoop:9000/sparkHistory
 
-vim spark-evn.sh
+vim spark-env.sh
 SPARK_HISTORY_OPTS="-Dspark.history.fs.logDirectory=hdfs://hadoop:9000/sparkHistory/"
 ```
 
-创建hdfs目录： `hadoop fs -mkdir hdfs://hadoop:9000/sparkHistory/`
+确保事件日志目录已创建，且运行应用的身份具备写入权限、History Server 具备读取权限：
 
-启动： `sh sbin/start-history-server.sh`
+```bash
+hadoop fs -mkdir -p hdfs://hadoop:9000/sparkHistory/
+```
+
+启动：`sbin/start-history-server.sh`
 
 
 
 ### 2. Spark的thriftserver
 
-> spark on hive ： 通过spark来执行任务（spark作为sql入口），解析sql和执行sql都是由spark来完成，但是底层表的一些元数据信息由hive来提供（metastore）
+> Spark 与 Hive metastore 集成时，可由 Spark 执行 SQL，并通过 Hive metastore 读取表元数据。读取 Hive 表数据还需配置相应文件、依赖和存储访问权限。
 
-跟hiveserver2一样，Spark也可以启动一个thriftserver进程，用于直接使用SparkSQL（不再需要创建项目，获取sparkSession之后再写SQL）
+Spark Thrift Server 提供 HiveServer2 兼容的 JDBC/ODBC 接口，可供 Beeline 等客户端执行 Spark SQL。
 
-启动thriftServer之前需要先进行配置（已经在集成环境中配置好了）
+启动前请按当前 Spark 版本的文档配置 Hive metastore、Hadoop 配置、数据库驱动及权限。常见检查项如下：
 
-1. 将hadoop和hive的配置文件放到spark的conf目录下（如果需要使用spark连接hive做操作的话）
-2. 将hive-site.xml中的  `hive.metastore.schema.verification`设置为false
-3. 将MySQL的驱动包放到spark的jars下
-4. 启动 `sh sbin/start-thriftserver.sh`
-5. 通过 spark安装目录下的 bin下的beeline进行连接  `bin/beeline -u jdbc:hive2://hadoop:10000 `
+1. 将所需的 Hadoop/Hive 配置放入 Spark 配置目录，确认 metastore 可访问。
+2. 确认 Hive metastore 使用的数据库驱动与配置正确；除非 Hive 版本文档明确要求，不要随意关闭 schema 校验。
+3. 按集群的依赖管理方式提供兼容的 JDBC 驱动。
+4. 启动 `sbin/start-thriftserver.sh`。
+5. 使用 Beeline 连接，例如：`bin/beeline -u 'jdbc:hive2://hadoop:10000'`。
 
 ### 3. 项目jdk版本问题
 
 <img src="./Apache Spark.assets/image-20250325210340576.png" alt="image-20250325210340576" style="zoom:80%;" />
 
-### 4. checkpoint+kafka恢复任务
+### 4. Checkpoint 与 Kafka 恢复
 
-整体思路： 设置检查点 + 数据重放
+对于使用 Spark Streaming Direct Kafka API 的旧版程序，恢复设计通常涉及 checkpoint、Kafka offset 和输出端幂等性。具体 API 与行为依赖 Spark Kafka connector 版本。
 
-spark streaming + kafka
-
-1. 任务本身开启了checkpoint（在生产环境中，checkpoint路径一般是hdfs上的，利用hdfs的分布式和副本机制）
+1. 配置可靠的 checkpoint 目录（生产环境通常使用有容错能力的分布式存储），并使用 `getOrCreate` 从有效检查点恢复。
 
    ```java
    JavaStreamingContext ssc = new JavaStreamingContext(sparkConf, Durations.seconds(5));
@@ -779,7 +757,7 @@ spark streaming + kafka
            ssc.checkpoint(checkpointDirectory);
    ```
 
-2. 重启任务的时候，一定是从上次结束的地方（检查点 checkpoint）继续
+2. 使用 Direct Kafka API 时，offset 范围可从每批次的 RDD 获取。检查点恢复与显式指定起始 offset 的优先级、行为，需按所用 connector 版本验证。
 
    ```java
            JavaStreamingContext ssc =
@@ -788,7 +766,7 @@ spark streaming + kafka
                    JavaStreamingContext.getOrCreate(checkpointDirectory, createContextFunc);
    ```
 
-3. 数据消费的时候，只有消费成功的时候才提交offset信息到kafka中
+3. 如需提交 offset 到 Kafka，可关闭自动提交，并仅在 sink 写入成功后提交对应 offset：
 
    ```java
    // Kafka参数配置
@@ -797,12 +775,10 @@ spark streaming + kafka
                kafkaParams.put("key.deserializer", StringDeserializer.class);
                kafkaParams.put("value.deserializer", StringDeserializer.class);
                kafkaParams.put("group.id", "spark-streaming-group");
-               kafkaParams.put("auto.offset.reset", <从指定offset启动>);
+               kafkaParams.put("auto.offset.reset", "earliest"); // 示例；也可按业务选择 latest
                kafkaParams.put("enable.auto.commit", false); // 关闭自动提交
-   // 中间处理数据
-   // 处理完数据之后再提交offset
+   // 处理当前批次并将结果写入 sink；确保写入成功后再提交相应 offset。
    ((CanCommitOffsets) stream.inputDStream()).commitAsync(offsetRanges);
    ```
 
-   
-
+   > 先写 sink 再提交 offset 通常仍可能在两步之间故障并导致重复写入；它不自动提供端到端 exactly-once。应使用幂等写入、事务性 sink/offset 协调，或在外部持久化 offset 并设计去重机制。Kafka 的自动提交、消费组状态和 Spark checkpoint 不能不加区分地视为同一份进度。
