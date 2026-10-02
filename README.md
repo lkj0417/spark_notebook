@@ -54,7 +54,7 @@ Spark 使用 DAG 执行模型；RDD 或 DataFrame 在需要重复使用时可以
 
 > 两者定位和使用场景并不完全相同。选择时应同时考虑延迟要求、容错语义、运维成本、数据源和团队经验。
 
-## 二、 Spark的快速入门
+## 二、 Spark 快速入门
 
 ### 1. spark 的安装
 
@@ -182,13 +182,13 @@ Resilient Distributed Datasets
 
 ### 1. RDD 的核心特性
 
-- 分布式(Distributed)：RDD区别于传统的数据集（集合），最大的特点就是它是分布式的，也就是说，它的数据会被切割成多个分区（partition），每个分区可以分布在集群中的不同节点上进行运算。 这样做的好处是可以并行的大规模处理数据，第二个好处就是方便编程。
+- 分布式（Distributed）：RDD 是由多个分区组成的数据集，可由集群中的多个 task 并行处理；分区与物理节点并非一一对应。
 
 <img src="./Apache Spark.assets/image-20250320214805778.png" alt="image-20250320214805778" style="zoom:80%;" />
 
-- 弹性（Resilient）：容错性。如果某个rdd转换的过程中，部分分区数据丢失，spark可以通过rdd的关系（血统lineage）信息重新计算丢失的分区，而不需要重新计算整个数据集。
-- 不可变性（immutable）：RDD是不可变的，一旦被创建之后，就不能再修改了，所有的转换操作都会生成一个新的RDD，而不是修改原始的RDD。
-- 类型化（Typed）：RDD和集合一样，都是强类型的，可以存储任何类型的数据，但是一个RDD中的数据类型必须都相同。
+- 弹性（Resilient）：RDD 会记录转换关系（lineage）；分区丢失时，Spark 可根据血缘信息重新计算受影响的分区。
+- 不可变性（Immutable）：RDD 创建后不能原地修改；转换操作会生成新的 RDD。
+- 类型化（Typed）：RDD API 通过类型参数描述元素类型。Scala 编译器可检查类型；Java 泛型在运行时有类型擦除，仍需由应用保证元素类型一致。
 
 ### 2. RDD 的创建方式
 
@@ -197,49 +197,48 @@ Resilient Distributed Datasets
 
 ### 3.  RDD 的操作
 
-RDD支持两种操作方式：transformation和action
+RDD 支持两类操作：transformation（转换）和 action（行动）。
 
-RDD的转换操作是**惰性求值**的，意思是所有的转换操作，在代码执行过程中，不会立即执行，而是记录下操作逻辑，直到遇到了action才会触发计算。
+RDD 的转换操作是**惰性求值**的：调用转换时只构造计算关系，通常直到 action 执行时才真正计算。
 
-因为如果没有action，说明这个计算结果没有人使用，那么就不计算了。
+> 惰性求值允许 Spark 将多个转换组合成执行计划；若多个 action 重复使用同一中间结果，可考虑 `cache` / `persist`。
 
-1. Transformation（转换操作）
+#### Transformation（转换操作）
 
-| Transformation                                               | Meaning                                                      |
-| :----------------------------------------------------------- | :----------------------------------------------------------- |
-| **map**(*func*)                                              | Return a new distributed dataset formed by passing each element of the source through a function *func*. 返回由通过函数 func 对源数据集中的每个元素进行传递而形成的新分布式数据集。 |
-| **filter**(*func*)                                           | Return a new dataset formed by selecting those elements of the source on which *func* returns true. |
-| **flatMap**(*func*)                                          | Similar to map, but each input item can be mapped to 0 or more output items (so *func* should return a Seq rather than a single item). |
-| **mapPartitions**(*func*)                                    | Similar to map, but runs separately on each partition (block) of the RDD, so *func* must be of type Iterator<T> => Iterator<U> when running on an RDD of type T. |
-| **groupByKey**([*numPartitions*])                            | When called on a dataset of (K, V) pairs, returns a dataset of (K, Iterable<V>) pairs. **Note:** If you are grouping in order to perform an aggregation (such as a sum or average) over each key, using `reduceByKey` or `aggregateByKey` will yield much better performance. **Note:** By default, the level of parallelism in the output depends on the number of partitions of the parent RDD. You can pass an optional `numPartitions` argument to set a different number of tasks. |
-| **reduceByKey**(*func*, [*numPartitions*])                   | When called on a dataset of (K, V) pairs, returns a dataset of (K, V) pairs where the values for each key are aggregated using the given reduce function *func*, which must be of type (V,V) => V. Like in `groupByKey`, the number of reduce tasks is configurable through an optional second argument. |
-| **aggregateByKey**(*zeroValue*)(*seqOp*, *combOp*, [*numPartitions*]) | When called on a dataset of (K, V) pairs, returns a dataset of (K, U) pairs where the values for each key are aggregated using the given combine functions and a neutral "zero" value. Allows an aggregated value type that is different than the input value type, while avoiding unnecessary allocations. Like in `groupByKey`, the number of reduce tasks is configurable through an optional second argument. |
-| **repartition**(*numPartitions*)                             | Reshuffle the data in the RDD randomly to create either more or fewer partitions and balance it across them. This always shuffles all data over the network. |
-| **coalesce**(*numPartitions*)                                | 减少分区数；默认不进行完整 shuffle，可能导致分区数据不均。需要重新均衡分区时可选择带 shuffle 的方式。 |
+| 操作 | 说明 |
+| :-- | :-- |
+| `map(func)` | 对每个元素应用函数，生成一个结果元素。 |
+| `filter(func)` | 保留使函数返回 `true` 的元素。 |
+| `flatMap(func)` | 对每个元素应用函数并展开结果；每个输入可对应零个或多个输出。 |
+| `mapPartitions(func)` | 对每个分区调用一次函数，输入和输出均为迭代器；可用于分区级初始化资源。 |
+| `groupByKey([numPartitions])` | 将键值对按 key 分组。若目的是聚合，通常优先使用 `reduceByKey` 或 `aggregateByKey`，避免传输所有原始值。 |
+| `reduceByKey(func, [numPartitions])` | 按 key 聚合，函数需满足可并行归并的结合性等要求；可先在 map 端合并部分结果。 |
+| `aggregateByKey(zeroValue)(seqOp, combOp, [numPartitions])` | 按 key 聚合，允许聚合结果类型不同于输入 value 类型。 |
+| `repartition(numPartitions)` | 通过 shuffle 调整分区数，可增加或减少分区并重新分布数据。 |
+| `coalesce(numPartitions)` | 减少分区数；默认不进行完整 shuffle，可能导致分区数据不均。需要重新均衡分区时可选择带 shuffle 的方式。 |
 
 > `reduceByKey` 和 `aggregateByKey` 通常比先 `groupByKey` 再聚合更高效，因为它们可以先在 map 端合并部分结果。转换是否触发 shuffle 取决于具体算子和参数。
 
-2. action
+#### Action（行动）
 
-   action会触发真正的计算，并将结果返回到 Driver或者保存到外部进行存储。
+Action 会触发计算，并将结果返回 Driver 或写入外部存储。返回 Driver 的操作只适用于结果足够小的场景。
 
-| **reduce**(*func*)                                 | Aggregate the elements of the dataset using a function *func* (which takes two arguments and returns one). The function should be commutative and associative so that it can be computed correctly in parallel. |
-| -------------------------------------------------- | ------------------------------------------------------------ |
-| **collect**()                                      | Return all the elements of the dataset as an array at the driver program. This is usually useful after a filter or other operation that returns a sufficiently small subset of the data. |
-| **count**()                                        | Return the number of elements in the dataset.                |
-| **first**()                                        | Return the first element of the dataset (similar to take(1)). |
-| **take**(*n*)                                      | Return an array with the first *n* elements of the dataset.  |
-| **takeSample**(*withReplacement*, *num*, [*seed*]) | Return an array with a random sample of *num* elements of the dataset, with or without replacement, optionally pre-specifying a random number generator seed. |
-| **takeOrdered**(*n*, *[ordering]*)                 | Return the first *n* elements of the RDD using either their natural order or a custom comparator. |
-| **saveAsTextFile**(*path*)                         | Write the elements of the dataset as a text file (or set of text files) in a given directory in the local filesystem, HDFS or any other Hadoop-supported file system. Spark will call toString on each element to convert it to a line of text in the file. |
-| **saveAsSequenceFile**(*path*) (Java and Scala)    | Write the elements of the dataset as a Hadoop SequenceFile in a given path in the local filesystem, HDFS or any other Hadoop-supported file system. This is available on RDDs of key-value pairs that implement Hadoop's Writable interface. In Scala, it is also available on types that are implicitly convertible to Writable (Spark includes conversions for basic types like Int, Double, String, etc). |
-| **saveAsObjectFile**(*path*) (Java and Scala)      | Write the elements of the dataset in a simple format using Java serialization, which can then be loaded using `SparkContext.objectFile()`. |
-| **countByKey**()                                   | Only available on RDDs of type (K, V). Returns a hashmap of (K, Int) pairs with the count of each key. |
-| **foreach**(*func*)                                | Run a function *func* on each element of the dataset. This is usually done for side effects such as updating an [Accumulator](https://archive.apache.org/dist/spark/docs/2.4.3/rdd-programming-guide.html#accumulators) or interacting with external storage systems. **Note**: modifying variables other than Accumulators outside of the `foreach()` may result in undefined behavior. See [Understanding closures ](https://archive.apache.org/dist/spark/docs/2.4.3/rdd-programming-guide.html#understanding-closures-a-nameclosureslinka)for more details. |
+| 操作 | 说明 |
+| :-- | :-- |
+| `reduce(func)` | 使用满足结合性和交换性的函数归并元素，返回一个结果。 |
+| `collect()` | 将全部元素拉回 Driver；仅用于结果集足够小的情况。 |
+| `count()` | 返回元素总数。 |
+| `first()` / `take(n)` | 返回首个元素或前 `n` 个元素。 |
+| `takeSample(withReplacement, num, [seed])` | 返回指定数量的随机样本，可选择是否放回及随机种子。 |
+| `takeOrdered(n, [ordering])` | 按自然顺序或指定顺序返回前 `n` 个元素。 |
+| `saveAsTextFile(path)` | 将元素写为文本文件，路径可以位于本地文件系统、HDFS 等支持的文件系统。 |
+| `saveAsSequenceFile(path)` / `saveAsObjectFile(path)` | 以 SequenceFile 或 Java 序列化对象文件格式保存 RDD（Java/Scala API）。 |
+| `countByKey()` | 对键值对 RDD 按 key 计数，并将结果 map 返回 Driver；需注意结果大小。 |
+| `foreach(func)` | 在 executor 上对各元素执行函数。外部副作用可能因任务重试而重复；闭包外变量修改不适合作为可靠结果。 |
 
 ### 4. 依赖关系
 
-宽窄依赖 --> stage划分
+宽窄依赖决定 stage 划分边界。
 
 - 宽依赖（Wide Dependency）
 
@@ -251,15 +250,15 @@ RDD的转换操作是**惰性求值**的，意思是所有的转换操作，在�
 
   
 
-  - 窄依赖（Narrow Dependency）
+- 窄依赖（Narrow Dependency）
 
-    每个父RDD的分区最多被一个子RDD的分区使用，这种就叫做窄依赖。
+  每个父 RDD 分区最多被一个子 RDD 分区使用，这种关系称为窄依赖。
 
-    通常会产生窄依赖的算子包含：  `map`、`filter`、`mapPartition`、`sample`、`union`
+  常见算子包括：`map`、`filter`、`mapPartitions`、`sample`、`union`。
 
-    <img src="./Apache Spark.assets/image-20250322101650945.png" alt="image-20250322101650945" style="zoom:80%;" />
+  <img src="./Apache Spark.assets/image-20250322101650945.png" alt="窄依赖示意图" style="zoom:80%;" />
 
-  宽依赖必然会有shuffle过程，shuffle的本质是数据的跨节点计算，因此在划分stage的时候，遇到了shuffle（宽依赖）就会切割stage（切割血缘）
+宽依赖通常需要 shuffle；调度器会在 shuffle 边界切分 stage。shuffle 涉及跨分区数据传输，可能产生网络和磁盘 I/O。
 
 ### 5. 分区和并行度
 
@@ -283,23 +282,18 @@ RDD的转换操作是**惰性求值**的，意思是所有的转换操作，在�
 
 <img src="./Apache Spark.assets/image-20250322115136723.png" alt="image-20250322115136723" style="zoom:80%;" />
 
-cache本质就是 StorageLevel.MEMORY_ONLY 的persist
+在 Spark 2.4 的 Scala/Java RDD API 中，`cache()` 等价于 `persist(StorageLevel.MEMORY_ONLY)`；其他语言 API 的默认存储级别可能不同。
 
-| Storage Level                          | Meaning                                                      |
-| -------------------------------------- | ------------------------------------------------------------ |
-| MEMORY_ONLY                            | Store RDD as deserialized Java objects in the JVM. If the RDD does not fit in memory, some partitions will not be cached and will be recomputed on the fly each time they're needed. This is the default level. |
-| MEMORY_AND_DISK                        | Store RDD as deserialized Java objects in the JVM. If the RDD does not fit in memory, store the partitions that don't fit on disk, and read them from there when they're needed. |
-| MEMORY_ONLY_SER (Java and Scala)       | Store RDD as *serialized* Java objects (one byte array per partition). This is generally more space-efficient than deserialized objects, especially when using a [fast serializer](https://spark.apache.org/docs/latest/tuning.html), but more CPU-intensive to read. |
-| MEMORY_AND_DISK_SER (Java and Scala)   | Similar to MEMORY_ONLY_SER, but spill partitions that don't fit in memory to disk instead of recomputing them on the fly each time they're needed. |
-| DISK_ONLY                              | Store the RDD partitions only on disk.                       |
-| MEMORY_ONLY_2, MEMORY_AND_DISK_2, etc. | Same as the levels above, but replicate each partition on two cluster nodes. |
-| OFF_HEAP (experimental)                | Similar to MEMORY_ONLY_SER, but store the data in [off-heap memory](https://spark.apache.org/docs/latest/configuration.html#memory-management). This requires off-heap memory to be enabled. |
+| 存储级别 | 说明 |
+| :-- | :-- |
+| `MEMORY_ONLY` | 以反序列化对象存于内存；内存不足的分区不会缓存，需要时重新计算。 |
+| `MEMORY_AND_DISK` | 优先存于内存，内存不足的分区写入磁盘。 |
+| `MEMORY_ONLY_SER` / `MEMORY_AND_DISK_SER` | 以序列化形式存储，可节省内存但增加序列化与反序列化开销。 |
+| `DISK_ONLY` | 分区仅存于磁盘。 |
+| 带 `_2` 的级别 | 将每个分区复制到两个节点，增加存储开销以提升副本冗余。 |
+| `OFF_HEAP` | 在启用并配置堆外内存后使用堆外存储。 |
 
-需要注意，这里的持久化不是真的持久化，这个持久化只在spark application的生命周期中有效，一旦application结束，persist也会被清理。
-
-### 7. checkpoint
-
-> 很少用
+### 7. Checkpoint
 
 RDD checkpoint 会将计算结果写入可靠存储（例如 HDFS），并截断 RDD 的 lineage。使用前需通过 `SparkContext.setCheckpointDir(path)` 设置目录，再对目标 RDD 调用 `checkpoint()`；检查点通常在后续 action 执行时写入。它会产生额外的计算和存储开销，应在 lineage 过长或恢复成本较高时使用。
 
